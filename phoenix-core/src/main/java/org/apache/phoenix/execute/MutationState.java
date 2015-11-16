@@ -745,7 +745,7 @@ public class MutationState implements SQLCloseable {
 	            while (mutationsIterator.hasNext()) {
 	                Pair<byte[],List<Mutation>> pair = mutationsIterator.next();
 	                byte[] htableName = pair.getFirst();
-	                List<Mutation> mutations = pair.getSecond();
+	                List<Mutation> mutationList = pair.getSecond();
 	                
 	                //create a span per target table
 	                //TODO maybe we can be smarter about the table name to string here?
@@ -756,7 +756,7 @@ public class MutationState implements SQLCloseable {
 	                do {
 	                    ServerCache cache = null;
 	                    if (isDataTable) {
-	                        cache = setMetaDataOnMutations(tableRef, mutations, indexMetaDataPtr);
+	                        cache = setMetaDataOnMutations(tableRef, mutationList, indexMetaDataPtr);
 	                    }
 	                
 	                    // If we haven't retried yet, retry for this case only, as it's possible that
@@ -785,19 +785,19 @@ public class MutationState implements SQLCloseable {
 	                            }
 	                            hTable = txnAware;
 	                        }
-	                        long numMutations = mutations.size();
+	                        long numMutations = mutationList.size();
                             GLOBAL_MUTATION_BATCH_SIZE.update(numMutations);
                             
                             long startTime = System.currentTimeMillis();
                             child.addTimelineAnnotation("Attempt " + retryCount);;
-	                        hTable.batch(mutations);
+	                        hTable.batch(mutationList);
 	                        child.stop();
 	                        child.stop();
                             shouldRetry = false;
                             long mutationCommitTime = System.currentTimeMillis() - startTime;
                             GLOBAL_MUTATION_COMMIT_TIME.update(mutationCommitTime);
                             
-                            long mutationSizeBytes = calculateMutationSize(mutations);
+                            long mutationSizeBytes = calculateMutationSize(mutationList);
                             MutationMetric mutationsMetric = new MutationMetric(numMutations, mutationSizeBytes, mutationCommitTime);
                             mutationMetricQueue.addMetricsForTable(Bytes.toString(htableName), mutationsMetric);
 	                    } catch (Exception e) {
@@ -840,6 +840,8 @@ public class MutationState implements SQLCloseable {
 	                                }
 	                            } 
 	                            if (sqlE != null) {
+	                            	// clear pending mutations
+	                            	mutations.clear();
 	                                throw sqlE;
 	                            }
 	                        }
