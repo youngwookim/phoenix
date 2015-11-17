@@ -73,7 +73,6 @@ import org.apache.phoenix.util.LogUtil;
 import org.apache.phoenix.util.SQLCloseable;
 import org.apache.phoenix.util.SQLCloseables;
 import org.apache.phoenix.util.ScanUtil;
-import org.apache.phoenix.util.TransactionUtil;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
