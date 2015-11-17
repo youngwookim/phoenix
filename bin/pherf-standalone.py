@@ -23,30 +23,10 @@ import os
 import subprocess
 import sys
 import phoenix_utils
-import atexit
-
-global childProc
-childProc = None
-def kill_child():
-    if childProc is not None:
-        childProc.terminate()
-        childProc.kill()
-        if os.name != 'nt':
-            os.system("reset")
-atexit.register(kill_child)
 
 phoenix_utils.setPath()
 
-if len(sys.argv) < 2:
-    print "Zookeeper not specified. \nUsage: sqlline.py <zookeeper> \
-<optional_sql_file> \nExample: \n 1. sqlline.py localhost:2181:/hbase \n 2. sqlline.py \
-localhost:2181:/hbase ../examples/stock_symbol.sql"
-    sys.exit()
-
-sqlfile = ""
-
-if len(sys.argv) > 2:
-    sqlfile = "--run=" + phoenix_utils.shell_quote([sys.argv[2]])
+args = phoenix_utils.shell_quote(sys.argv[1:])
 
 # HBase configuration folder path (where hbase-site.xml reside) for
 # HBase/Phoenix client side property override
@@ -82,24 +62,10 @@ if java_home:
 else:
     java = 'java'
 
-colorSetting = "true"
-# disable color setting for windows OS
-if os.name == 'nt':
-    colorSetting = "false"
-
-java_cmd = java + ' -cp "' + phoenix_utils.hbase_conf_dir + os.pathsep + phoenix_utils.phoenix_client_jar + os.pathsep + phoenix_utils.hadoop_common_jar + os.pathsep + phoenix_utils.hadoop_hdfs_jar + \
-    os.pathsep + phoenix_utils.hadoop_conf + os.pathsep + phoenix_utils.hadoop_classpath + '" -Dlog4j.configuration=file:' + \
+java_cmd = java +' -Xms512m -Xmx3072m  -cp "' + phoenix_utils.pherf_conf_path + os.pathsep + phoenix_utils.hbase_conf_dir + os.pathsep + phoenix_utils.phoenix_client_jar + os.pathsep + phoenix_utils.phoenix_pherf_jar + \
+    '" -Dlog4j.configuration=file:' + \
     os.path.join(phoenix_utils.current_dir, "log4j.properties") + \
-    " sqlline.SqlLine -d org.apache.phoenix.jdbc.PhoenixDriver \
--u jdbc:phoenix:" + phoenix_utils.shell_quote([sys.argv[1]]) + \
-    " -n none -p none --color=" + colorSetting + " --fastConnect=false --verbose=true \
---isolation=TRANSACTION_READ_COMMITTED " + sqlfile
+    " org.apache.phoenix.pherf.Pherf " + args 
 
-childProc = subprocess.Popen(java_cmd, shell=True)
-#Wait for child process exit
-(output, error) = childProc.communicate()
-returncode = childProc.returncode
-childProc = None
-# Propagate Java return code to this script
-if returncode is not None:
-    sys.exit(returncode)
+exitcode = subprocess.call(java_cmd, shell=True)
+sys.exit(exitcode)
