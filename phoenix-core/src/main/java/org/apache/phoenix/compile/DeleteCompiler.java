@@ -324,9 +324,12 @@ public class DeleteCompiler {
                 // - read-only VIEW 
                 // - transactional table with a connection having an SCN
                 // TODO: SchemaUtil.isReadOnly(PTable, connection)?
-                if ( ( table.getType() == PTableType.VIEW && table.getViewType().isReadOnly() ) 
-                     || ( table.isTransactional() && connection.getSCN() != null ) ) {
+                if (table.getType() == PTableType.VIEW && table.getViewType().isReadOnly()) {
                     throw new ReadOnlyTableException(schemaName,tableName);
+                }
+                else if (table.isTransactional() && connection.getSCN() != null) {
+                   throw new SQLExceptionInfo.Builder(SQLExceptionCode.CANNOT_SPECIFY_SCN_FOR_TXN_TABLE).setSchemaName(schemaName)
+                   .setTableName(tableName).build().buildException();
                 }
                 
                 immutableIndex = getNonDisabledImmutableIndexes(tableRefToBe);

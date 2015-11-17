@@ -784,6 +784,8 @@ public class PTableImpl implements PTable {
         @Override
         public void delete() {
             newMutations();
+            // we're using the Tephra column family delete marker here to prevent the translation 
+            // of deletes to puts by the Tephra's TransactionProcessor
             if (PTableImpl.this.isTransactional()) {
                 Put delete = new Put(key);
                 for (PColumnFamily colFamily : families) {

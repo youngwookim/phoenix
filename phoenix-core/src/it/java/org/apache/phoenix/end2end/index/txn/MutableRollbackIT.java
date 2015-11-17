@@ -16,17 +16,14 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.Properties;
 
-import org.apache.hadoop.hbase.client.HTableInterface;
-import org.apache.hadoop.hbase.client.Result;
-import org.apache.hadoop.hbase.client.ResultScanner;
-import org.apache.hadoop.hbase.client.Scan;
-import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.phoenix.end2end.BaseHBaseManagedTimeIT;
 import org.apache.phoenix.end2end.Shadower;
-import org.apache.phoenix.jdbc.PhoenixConnection;
+import org.apache.phoenix.query.BaseTest;
 import org.apache.phoenix.query.QueryServices;
 import org.apache.phoenix.util.PropertiesUtil;
 import org.apache.phoenix.util.ReadOnlyProps;
+import org.apache.phoenix.util.SchemaUtil;
+import org.apache.phoenix.util.TestUtil;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -36,9 +33,15 @@ import org.junit.runners.Parameterized.Parameters;
 import com.google.common.collect.Maps;
 
 @RunWith(Parameterized.class)
-public class MutableRollbackIT extends BaseHBaseManagedTimeIT {
+public class MutableRollbackIT extends BaseTest {
 	
 	private final boolean localIndex;
+	private String tableName1;
+    private String indexName1;
+    private String fullTableName1;
+    private String tableName2;
+    private String indexName2;
+    private String fullTableName2;
 
 	public MutableRollbackIT(boolean localIndex) {
 		this.localIndex = localIndex;
@@ -49,9 +52,6 @@ public class MutableRollbackIT extends BaseHBaseManagedTimeIT {
     public static void doSetup() throws Exception {
         Map<String,String> props = Maps.newHashMapWithExpectedSize(2);
         props.put(QueryServices.DEFAULT_TRANSACTIONAL_ATTRIB, Boolean.toString(true));
-        // We need this b/c we don't allow a transactional table to be created if the underlying
-        // HBase table already exists (since we don't know if it was transactional before).
-        props.put(QueryServices.DROP_METADATA_ATTRIB, Boolean.toString(true));
         setUpTestDriver(new ReadOnlyProps(props.entrySet().iterator()));
     }
 	
@@ -62,50 +62,60 @@ public class MutableRollbackIT extends BaseHBaseManagedTimeIT {
            });
     }
 	
+	private void setTableNames() {
+		tableName1 = TestUtil.DEFAULT_DATA_TABLE_NAME + "_1_" + System.currentTimeMillis();
+        indexName1 = "IDX1"  + "_" + System.currentTimeMillis();
+        fullTableName1 = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, tableName1);
+        tableName2 = TestUtil.DEFAULT_DATA_TABLE_NAME + "_2_" + System.currentTimeMillis();
+        indexName2 = "IDX2"  + "_" + System.currentTimeMillis();
+        fullTableName2 = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, tableName2);
+	}
+	
 	@Test
     public void testRollbackOfUncommittedExistingKeyValueIndexUpdate() throws Exception {
+		setTableNames();
         Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
         Connection conn = DriverManager.getConnection(getUrl(), props);
         conn.setAutoCommit(false);
         try {
             Statement stmt = conn.createStatement();
-            stmt.execute("CREATE TABLE DEMO1(k VARCHAR PRIMARY KEY, v1 VARCHAR, v2 VARCHAR)");
-            stmt.execute("CREATE TABLE DEMO2(k VARCHAR PRIMARY KEY, v1 VARCHAR, v2 VARCHAR) IMMUTABLE_ROWS=true");
-            stmt.execute("CREATE "+(localIndex? " LOCAL " : "")+"INDEX DEMO1_idx ON DEMO1 (v1) INCLUDE(v2)");
-            stmt.execute("CREATE "+(localIndex? " LOCAL " : "")+"INDEX DEMO2_idx ON DEMO2 (v1) INCLUDE(v2)");
+            stmt.execute("CREATE TABLE " + fullTableName1 + "(k VARCHAR PRIMARY KEY, v1 VARCHAR, v2 VARCHAR)");
+            stmt.execute("CREATE TABLE " + fullTableName2 + "(k VARCHAR PRIMARY KEY, v1 VARCHAR, v2 VARCHAR) IMMUTABLE_ROWS=true");
+            stmt.execute("CREATE "+(localIndex? " LOCAL " : "")+"INDEX " + indexName1 + " ON " + fullTableName1 + " (v1) INCLUDE(v2)");
+            stmt.execute("CREATE "+(localIndex? " LOCAL " : "")+"INDEX " + indexName2 + " ON " + fullTableName2 + " (v1) INCLUDE(v2)");
             
-            stmt.executeUpdate("upsert into DEMO1 values('x', 'y', 'a')");
+            stmt.executeUpdate("upsert into " + fullTableName1 + " values('x', 'y', 'a')");
             conn.commit();
             
-            //assert rows exists in DEMO1
-            ResultSet rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from DEMO1");
+            //assert rows exists in fullTableName1
+            ResultSet rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from " + fullTableName1);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("y", rs.getString(2));
             assertEquals("a", rs.getString(3));
             assertFalse(rs.next());
             
-            //assert rows exists in DEMO1_idx
-            rs = stmt.executeQuery("select k, v1, v2 from DEMO1 ORDER BY v1");
+            //assert rows exists in indexName1
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName1 + ")*/ k, v1, v2 from " + fullTableName1);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("y", rs.getString(2));
             assertEquals("a", rs.getString(3));
             assertFalse(rs.next());
             
-            //assert no rows exists in DEMO2
-            rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from DEMO2");
+            //assert no rows exists in fullTableName2
+            rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from " + fullTableName2);
             assertFalse(rs.next());
             
-            //assert no rows exists in DEMO2_idx
-            rs = stmt.executeQuery("select k, v1 from DEMO2 ORDER BY v1");
+            //assert no rows exists in indexName2
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName2 + ")*/ k, v1 from " + fullTableName2);
             assertFalse(rs.next());
             
-            stmt.executeUpdate("upsert into DEMO1 values('x', 'y', 'b')");
-            stmt.executeUpdate("upsert into DEMO2 values('a', 'b', 'c')");
+            stmt.executeUpdate("upsert into " + fullTableName1 + " values('x', 'y', 'b')");
+            stmt.executeUpdate("upsert into " + fullTableName2 + " values('a', 'b', 'c')");
             
             //assert new covered column value 
-            rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from DEMO1");
+            rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from " + fullTableName1);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("y", rs.getString(2));
@@ -113,23 +123,23 @@ public class MutableRollbackIT extends BaseHBaseManagedTimeIT {
             assertFalse(rs.next());
             
             //assert new covered column value 
-            rs = stmt.executeQuery("select k, v1, v2 from DEMO1 ORDER BY v1");
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName1 + ")*/ k, v1, v2 from " + fullTableName1);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("y", rs.getString(2));
             assertEquals("b", rs.getString(3));
             assertFalse(rs.next());
             
-            //assert rows exists in DEMO2
-            rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from DEMO2");
+            //assert rows exists in fullTableName2
+            rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from " + fullTableName2);
             assertTrue(rs.next());
             assertEquals("a", rs.getString(1));
             assertEquals("b", rs.getString(2));
             assertEquals("c", rs.getString(3));
             assertFalse(rs.next());
             
-            //assert rows exists in DEMO2 index table
-            rs = stmt.executeQuery("select k, v1 from DEMO2 ORDER BY v1");
+            //assert rows exists in " + fullTableName2 + " index table
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName2 + ")*/ k, v1 from " + fullTableName2);
             assertTrue(rs.next());
             assertEquals("a", rs.getString(1));
             assertEquals("b", rs.getString(2));
@@ -137,50 +147,50 @@ public class MutableRollbackIT extends BaseHBaseManagedTimeIT {
             
             conn.rollback();
             
-            //assert original row exists in DEMO1
-            rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from DEMO1");
+            //assert original row exists in fullTableName1
+            rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from " + fullTableName1);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("y", rs.getString(2));
             assertEquals("a", rs.getString(3));
             assertFalse(rs.next());
             
-            //assert original row exists in DEMO1_idx
-            rs = stmt.executeQuery("select k, v1, v2 from DEMO1 ORDER BY v1");
+            //assert original row exists in indexName1
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName1 + ")*/ k, v1, v2 from " + fullTableName1);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("y", rs.getString(2));
             assertEquals("a", rs.getString(3));
             assertFalse(rs.next());
             
-            //assert no rows exists in DEMO2
-            rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from DEMO2");
+            //assert no rows exists in fullTableName2
+            rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from " + fullTableName2);
             assertFalse(rs.next());
             
-            //assert no rows exists in DEMO2_idx
-            rs = stmt.executeQuery("select k, v1 from DEMO2 ORDER BY v1");
+            //assert no rows exists in indexName2
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName2 + ")*/ k, v1 from " + fullTableName2);
             assertFalse(rs.next());
             
-            stmt.executeUpdate("upsert into DEMO1 values('x', 'z', 'a')");
-            stmt.executeUpdate("upsert into DEMO2 values('a', 'b', 'c')");
+            stmt.executeUpdate("upsert into " + fullTableName1 + " values('x', 'z', 'a')");
+            stmt.executeUpdate("upsert into " + fullTableName2 + " values('a', 'b', 'c')");
             conn.commit();
 
             assertDataAndIndexRows(stmt);
-            stmt.executeUpdate("delete from DEMO1 where  k='x'");
-            stmt.executeUpdate("delete from DEMO2 where  v1='b'");
+            stmt.executeUpdate("delete from " + fullTableName1 + " where  k='x'");
+            stmt.executeUpdate("delete from " + fullTableName2 + " where  v1='b'");
             
-            //assert no rows exists in DEMO1
-            rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from DEMO1");
+            //assert no rows exists in fullTableName1
+            rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from " + fullTableName1);
             assertFalse(rs.next());
-            //assert no rows exists in DEMO1_idx
-            rs = stmt.executeQuery("select k, v1 from DEMO1 ORDER BY v1");
+            //assert no rows exists in indexName1
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName1 + ")*/ k, v1 from " + fullTableName1 + " ORDER BY v1");
             assertFalse(rs.next());
 
-            //assert no rows exists in DEMO2
-            rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from DEMO2");
+            //assert no rows exists in fullTableName2
+            rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from " + fullTableName2);
             assertFalse(rs.next());
-            //assert no rows exists in DEMO2_idx
-            rs = stmt.executeQuery("select k, v1 from DEMO2 ORDER BY v1");
+            //assert no rows exists in indexName2
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName2 + ")*/ k, v1 from " + fullTableName2);
             assertFalse(rs.next());
             
             conn.rollback();
@@ -192,93 +202,94 @@ public class MutableRollbackIT extends BaseHBaseManagedTimeIT {
 
 	@Test
     public void testRollbackOfUncommittedExistingRowKeyIndexUpdate() throws Exception {
+		setTableNames();
         Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
         Connection conn = DriverManager.getConnection(getUrl(), props);
         conn.setAutoCommit(false);
         try {
             Statement stmt = conn.createStatement();
-            stmt.execute("CREATE TABLE DEMO1(k VARCHAR PRIMARY KEY, v1 VARCHAR, v2 VARCHAR)");
-            stmt.execute("CREATE TABLE DEMO2(k VARCHAR PRIMARY KEY, v1 VARCHAR, v2 VARCHAR) IMMUTABLE_ROWS=true");
-            stmt.execute("CREATE "+(localIndex? " LOCAL " : "")+"INDEX DEMO1_idx ON DEMO1 (v1, k)");
-            stmt.execute("CREATE "+(localIndex? " LOCAL " : "")+"INDEX DEMO2_idx ON DEMO2 (v1, k)");
+            stmt.execute("CREATE TABLE " + fullTableName1 + "(k VARCHAR PRIMARY KEY, v1 VARCHAR, v2 VARCHAR)");
+            stmt.execute("CREATE TABLE " + fullTableName2 + "(k VARCHAR PRIMARY KEY, v1 VARCHAR, v2 VARCHAR) IMMUTABLE_ROWS=true");
+            stmt.execute("CREATE "+(localIndex? " LOCAL " : "")+"INDEX " + indexName1 + " ON " + fullTableName1 + " (v1, k)");
+            stmt.execute("CREATE "+(localIndex? " LOCAL " : "")+"INDEX " + indexName2 + " ON " + fullTableName2 + " (v1, k)");
             
-            stmt.executeUpdate("upsert into DEMO1 values('x', 'y', 'a')");
+            stmt.executeUpdate("upsert into " + fullTableName1 + " values('x', 'y', 'a')");
             conn.commit();
             
-            //assert rows exists in DEMO1 
-            ResultSet rs = stmt.executeQuery("select k, v1, v2 from DEMO1");
+            //assert rows exists in " + fullTableName1 + " 
+            ResultSet rs = stmt.executeQuery("select k, v1, v2 from " + fullTableName1);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("y", rs.getString(2));
             assertEquals("a", rs.getString(3));
             assertFalse(rs.next());
             
-            //assert rows exists in DEMO1_idx
-            rs = stmt.executeQuery("select k, v1 from DEMO1 ORDER BY v1");
+            //assert rows exists in indexName1
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName1 + ")*/ k, v1 from " + fullTableName1);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("y", rs.getString(2));
             assertFalse(rs.next());
             
-            //assert no rows exists in DEMO2
-            rs = stmt.executeQuery("select k, v1, v2 from DEMO2");
+            //assert no rows exists in fullTableName2
+            rs = stmt.executeQuery("select k, v1, v2 from " + fullTableName2);
             assertFalse(rs.next());
             
-            //assert no rows exists in DEMO2_idx
-            rs = stmt.executeQuery("select k, v1 from DEMO2 ORDER BY v1");
+            //assert no rows exists in indexName2
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName2 + ")*/ k, v1 from " + fullTableName2);
             assertFalse(rs.next());
             
-            stmt.executeUpdate("upsert into DEMO1 values('x', 'z', 'a')");
-            stmt.executeUpdate("upsert into DEMO2 values('a', 'b', 'c')");
+            stmt.executeUpdate("upsert into " + fullTableName1 + " values('x', 'z', 'a')");
+            stmt.executeUpdate("upsert into " + fullTableName2 + " values('a', 'b', 'c')");
             
             assertDataAndIndexRows(stmt);
             
             conn.rollback();
             
-            //assert original row exists in DEMO1
-            rs = stmt.executeQuery("select k, v1, v2 from DEMO1");
+            //assert original row exists in fullTableName1
+            rs = stmt.executeQuery("select k, v1, v2 from " + fullTableName1);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("y", rs.getString(2));
             assertEquals("a", rs.getString(3));
             assertFalse(rs.next());
             
-            //assert original row exists in DEMO1_idx
-            rs = stmt.executeQuery("select k, v1, v2 from DEMO1 ORDER BY v1");
+            //assert original row exists in indexName1
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName1 + ")*/ k, v1, v2 from " + fullTableName1);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("y", rs.getString(2));
             assertEquals("a", rs.getString(3));
             assertFalse(rs.next());
             
-            //assert no rows exists in DEMO2
-            rs = stmt.executeQuery("select k, v1, v2 from DEMO2");
+            //assert no rows exists in fullTableName2
+            rs = stmt.executeQuery("select k, v1, v2 from " + fullTableName2);
             assertFalse(rs.next());
             
-            //assert no rows exists in DEMO2_idx
-            rs = stmt.executeQuery("select k, v1 from DEMO2 ORDER BY v1");
+            //assert no rows exists in indexName2
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName1 + ")*/ k, v1 from " + fullTableName2);
             assertFalse(rs.next());
             
-            stmt.executeUpdate("upsert into DEMO1 values('x', 'z', 'a')");
-            stmt.executeUpdate("upsert into DEMO2 values('a', 'b', 'c')");
+            stmt.executeUpdate("upsert into " + fullTableName1 + " values('x', 'z', 'a')");
+            stmt.executeUpdate("upsert into " + fullTableName2 + " values('a', 'b', 'c')");
             conn.commit();
 
             assertDataAndIndexRows(stmt);
-            stmt.executeUpdate("delete from DEMO1 where  k='x'");
-            stmt.executeUpdate("delete from DEMO2 where  v1='b'");
+            stmt.executeUpdate("delete from " + fullTableName1 + " where  k='x'");
+            stmt.executeUpdate("delete from " + fullTableName2 + " where  v1='b'");
             
-            //assert no rows exists in DEMO1
-            rs = stmt.executeQuery("select k, v1, v2 from DEMO1");
+            //assert no rows exists in fullTableName1
+            rs = stmt.executeQuery("select k, v1, v2 from " + fullTableName1);
             assertFalse(rs.next());
-            //assert no rows exists in DEMO1_idx
-            rs = stmt.executeQuery("select k, v1 from DEMO1 ORDER BY v1");
+            //assert no rows exists in indexName1
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName1 + ")*/ k, v1 from " + fullTableName1);
             assertFalse(rs.next());
 
-            //assert no rows exists in DEMO2
-            rs = stmt.executeQuery("select k, v1, v2 from DEMO2");
+            //assert no rows exists in fullTableName2
+            rs = stmt.executeQuery("select k, v1, v2 from " + fullTableName2);
             assertFalse(rs.next());
-            //assert no rows exists in DEMO2_idx
-            rs = stmt.executeQuery("select k, v1 from DEMO2 ORDER BY v1");
+            //assert no rows exists in indexName2
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName2 + ")*/ k, v1 from " + fullTableName2);
             assertFalse(rs.next());
             
             conn.rollback();
@@ -288,48 +299,35 @@ public class MutableRollbackIT extends BaseHBaseManagedTimeIT {
             conn.close();
         }
     }
-
-	protected static void printRawTable(Connection conn, String tableName) throws SQLException, IOException {
-	    HTableInterface htable = conn.unwrap(PhoenixConnection.class).getQueryServices().getTable(Bytes.toBytes(tableName));
-	    Scan scan = new Scan();
-	    scan.setRaw(true);;
-	    scan.setMaxVersions();
-	    ResultScanner scanner = htable.getScanner(scan);
-	    Result r = null;
-	    System.out.println("**************** " + tableName);
-	    while ((r = scanner.next()) != null) {
-	        System.out.println("    **********" + r);
-	    }
-	}
 	
-    private static void assertDataAndIndexRows(Statement stmt) throws SQLException, IOException {
+    private void assertDataAndIndexRows(Statement stmt) throws SQLException, IOException {
         ResultSet rs;
-        //assert new covered row key value exists in DEMO1
-        rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from DEMO1");
+        //assert new covered row key value exists in fullTableName1
+        rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from " + fullTableName1);
         assertTrue(rs.next());
         assertEquals("x", rs.getString(1));
         assertEquals("z", rs.getString(2));
         assertEquals("a", rs.getString(3));
         assertFalse(rs.next());
         
-        //assert new covered row key value exists in DEMO1_idx
-        rs = stmt.executeQuery("select k, v1, v2 from DEMO1 ORDER BY v1");
+        //assert new covered row key value exists in indexName1
+        rs = stmt.executeQuery("select /*+ INDEX(" + indexName1 + ")*/ k, v1, v2 from " + fullTableName1);
         assertTrue(rs.next());
         assertEquals("x", rs.getString(1));
         assertEquals("z", rs.getString(2));
         assertEquals("a", rs.getString(3));
         assertFalse(rs.next());
         
-        //assert rows exists in DEMO2
-        rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from DEMO2");
+        //assert rows exists in fullTableName2
+        rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from " + fullTableName2);
         assertTrue(rs.next());
         assertEquals("a", rs.getString(1));
         assertEquals("b", rs.getString(2));
         assertEquals("c", rs.getString(3));
         assertFalse(rs.next());
         
-        //assert rows exists in DEMO2 index table
-        rs = stmt.executeQuery("select k, v1 from DEMO2 ORDER BY v1");
+        //assert rows exists in " + fullTableName2 + " index table
+        rs = stmt.executeQuery("select /*+ INDEX(" + indexName1 + ")*/ k, v1 from " + fullTableName2);
         assertTrue(rs.next());
         assertEquals("a", rs.getString(1));
         assertEquals("b", rs.getString(2));
@@ -338,44 +336,45 @@ public class MutableRollbackIT extends BaseHBaseManagedTimeIT {
     
     @Test
     public void testMultiRollbackOfUncommittedExistingRowKeyIndexUpdate() throws Exception {
+    	setTableNames();
         Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
         Connection conn = DriverManager.getConnection(getUrl(), props);
         conn.setAutoCommit(false);
         try {
             Statement stmt = conn.createStatement();
-            stmt.execute("CREATE TABLE DEMO1(k VARCHAR PRIMARY KEY, v1 VARCHAR, v2 VARCHAR)");
-            stmt.execute("CREATE "+(localIndex? " LOCAL " : "")+"INDEX DEMO1_idx ON DEMO1 (v1, k)");
+            stmt.execute("CREATE TABLE " + fullTableName1 + "(k VARCHAR PRIMARY KEY, v1 VARCHAR, v2 VARCHAR)");
+            stmt.execute("CREATE "+(localIndex? " LOCAL " : "")+"INDEX " + indexName1 + " ON " + fullTableName1 + " (v1, k)");
             
-            stmt.executeUpdate("upsert into DEMO1 values('x', 'yyyy', 'a')");
+            stmt.executeUpdate("upsert into " + fullTableName1 + " values('x', 'yyyy', 'a')");
             conn.commit();
             
-            //assert rows exists in DEMO1 
-            ResultSet rs = stmt.executeQuery("select k, v1, v2 from DEMO1");
+            //assert rows exists in " + fullTableName1 + " 
+            ResultSet rs = stmt.executeQuery("select k, v1, v2 from " + fullTableName1);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("yyyy", rs.getString(2));
             assertEquals("a", rs.getString(3));
             assertFalse(rs.next());
             
-            //assert rows exists in DEMO1_idx
-            rs = stmt.executeQuery("select k, v1 from DEMO1 ORDER BY v1");
+            //assert rows exists in indexName1
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName1 + ")*/ k, v1 from " + fullTableName1 + " ORDER BY v1");
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("yyyy", rs.getString(2));
             assertFalse(rs.next());
             
-            stmt.executeUpdate("upsert into DEMO1 values('x', 'zzz', 'a')");
+            stmt.executeUpdate("upsert into " + fullTableName1 + " values('x', 'zzz', 'a')");
             
-            //assert new covered row key value exists in DEMO1
-            rs = stmt.executeQuery("select k, v1, v2 from DEMO1");
+            //assert new covered row key value exists in fullTableName1
+            rs = stmt.executeQuery("select k, v1, v2 from " + fullTableName1);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("zzz", rs.getString(2));
             assertEquals("a", rs.getString(3));
             assertFalse(rs.next());
             
-            //assert new covered row key value exists in DEMO1_idx
-            rs = stmt.executeQuery("select k, v1 from DEMO1 ORDER BY v1");
+            //assert new covered row key value exists in indexName1
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName1 + ")*/ k, v1 from " + fullTableName1 + " ORDER BY v1");
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("zzz", rs.getString(2));
@@ -383,33 +382,33 @@ public class MutableRollbackIT extends BaseHBaseManagedTimeIT {
             
             conn.rollback();
             
-            //assert original row exists in DEMO1
-            rs = stmt.executeQuery("select k, v1, v2 from DEMO1");
+            //assert original row exists in fullTableName1
+            rs = stmt.executeQuery("select k, v1, v2 from " + fullTableName1);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("yyyy", rs.getString(2));
             assertEquals("a", rs.getString(3));
             assertFalse(rs.next());
             
-            //assert original row exists in DEMO1_idx
-            rs = stmt.executeQuery("select k, v1 from DEMO1 ORDER BY v1");
+            //assert original row exists in indexName1
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName1 + ")*/ k, v1 from " + fullTableName1 + " ORDER BY v1");
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("yyyy", rs.getString(2));
             assertFalse(rs.next());
             
-            stmt.executeUpdate("upsert into DEMO1 values('x', 'zz', 'a')");
+            stmt.executeUpdate("upsert into " + fullTableName1 + " values('x', 'zz', 'a')");
             
-            //assert new covered row key value exists in DEMO1
-            rs = stmt.executeQuery("select k, v1, v2 from DEMO1");
+            //assert new covered row key value exists in fullTableName1
+            rs = stmt.executeQuery("select k, v1, v2 from " + fullTableName1);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("zz", rs.getString(2));
             assertEquals("a", rs.getString(3));
             assertFalse(rs.next());
             
-            //assert new covered row key value exists in DEMO1_idx
-            rs = stmt.executeQuery("select k, v1 from DEMO1 ORDER BY v1");
+            //assert new covered row key value exists in indexName1
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName1 + ")*/ k, v1 from " + fullTableName1 + " ORDER BY v1");
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("zz", rs.getString(2));
@@ -417,16 +416,16 @@ public class MutableRollbackIT extends BaseHBaseManagedTimeIT {
             
             conn.rollback();
             
-            //assert original row exists in DEMO1
-            rs = stmt.executeQuery("select k, v1, v2 from DEMO1");
+            //assert original row exists in fullTableName1
+            rs = stmt.executeQuery("select k, v1, v2 from " + fullTableName1);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("yyyy", rs.getString(2));
             assertEquals("a", rs.getString(3));
             assertFalse(rs.next());
             
-            //assert original row exists in DEMO1_idx
-            rs = stmt.executeQuery("select k, v1 from DEMO1 ORDER BY v1");
+            //assert original row exists in indexName1
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName1 + ")*/ k, v1 from " + fullTableName1 + " ORDER BY v1");
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("yyyy", rs.getString(2));
@@ -439,44 +438,41 @@ public class MutableRollbackIT extends BaseHBaseManagedTimeIT {
     
     @Test
     public void testCheckpointAndRollback() throws Exception {
+    	setTableNames();
         Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
         Connection conn = DriverManager.getConnection(getUrl(), props);
         conn.setAutoCommit(false);
         try {
             Statement stmt = conn.createStatement();
-            stmt.execute("CREATE TABLE DEMO1(k VARCHAR PRIMARY KEY, v1 VARCHAR, v2 VARCHAR)");
-            stmt.execute("CREATE "+(localIndex? " LOCAL " : "")+"INDEX DEMO1_idx ON DEMO1 (v1)");
-            
-            stmt.executeUpdate("upsert into DEMO1 values('x', 'a', 'a')");
+            stmt.execute("CREATE TABLE " + fullTableName1 + "(k VARCHAR PRIMARY KEY, v1 VARCHAR, v2 VARCHAR)");
+            stmt.execute("CREATE "+(localIndex? " LOCAL " : "")+"INDEX " + indexName1 + " ON " + fullTableName1 + " (v1)");
+            stmt.executeUpdate("upsert into " + fullTableName1 + " values('x', 'a', 'a')");
             conn.commit();
             
-            ResultSet rs;
-            
-            stmt.executeUpdate("upsert into DEMO1(k,v1) SELECT k,v1||'a' FROM DEMO1");
-            
-            rs = stmt.executeQuery("select k, v1, v2 from DEMO1");
+            stmt.executeUpdate("upsert into " + fullTableName1 + "(k,v1) SELECT k,v1||'a' FROM " + fullTableName1);
+            ResultSet rs = stmt.executeQuery("select k, v1, v2 from " + fullTableName1);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("aa", rs.getString(2));
             assertEquals("a", rs.getString(3));
             assertFalse(rs.next());
             
-            rs = stmt.executeQuery("select k, v1 from DEMO1 ORDER BY v1");
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName1 + ")*/ k, v1 from " + fullTableName1 + " ORDER BY v1");
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("aa", rs.getString(2));
             assertFalse(rs.next());
             
-            stmt.executeUpdate("upsert into DEMO1(k,v1) SELECT k,v1||'a' FROM DEMO1");
+            stmt.executeUpdate("upsert into " + fullTableName1 + "(k,v1) SELECT k,v1||'a' FROM " + fullTableName1);
             
-            rs = stmt.executeQuery("select k, v1, v2 from DEMO1");
+            rs = stmt.executeQuery("select k, v1, v2 from " + fullTableName1);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("aaa", rs.getString(2));
             assertEquals("a", rs.getString(3));
             assertFalse(rs.next());
             
-            rs = stmt.executeQuery("select k, v1 from DEMO1 ORDER BY v1");
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName1 + ")*/ k, v1 from " + fullTableName1 + " ORDER BY v1");
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("aaa", rs.getString(2));
@@ -484,16 +480,16 @@ public class MutableRollbackIT extends BaseHBaseManagedTimeIT {
             
             conn.rollback();
             
-            //assert original row exists in DEMO1
-            rs = stmt.executeQuery("select k, v1, v2 from DEMO1");
+            //assert original row exists in fullTableName1
+            rs = stmt.executeQuery("select k, v1, v2 from " + fullTableName1);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("a", rs.getString(2));
             assertEquals("a", rs.getString(3));
             assertFalse(rs.next());
             
-            //assert original row exists in DEMO1_idx
-            rs = stmt.executeQuery("select k, v1 from DEMO1 ORDER BY v1");
+            //assert original row exists in indexName1
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName1 + ")*/ k, v1 from " + fullTableName1 + " ORDER BY v1");
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("a", rs.getString(2));

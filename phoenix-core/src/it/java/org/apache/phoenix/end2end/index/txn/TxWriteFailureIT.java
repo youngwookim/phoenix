@@ -85,7 +85,6 @@ public class TxWriteFailureIT extends BaseTest {
 
 		Map<String, String> props = Maps.newHashMapWithExpectedSize(1);
 		// Must update config before starting server
-		props.put(QueryServices.DROP_METADATA_ATTRIB, Boolean.toString(true));
 		props.put(QueryServices.DEFAULT_TRANSACTIONAL_ATTRIB, Boolean.toString(true));
 		driver = initAndRegisterDriver(url, new ReadOnlyProps(props.entrySet().iterator()));
 		clusterInitialized = true;

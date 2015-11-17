@@ -1430,7 +1430,7 @@ public class MetaDataClient {
                 FunctionArgument arg = args.get(i);
                 addFunctionArgMutation(function.getFunctionName(), arg, argUpsert, i);
             }
-            functionData.addAll(connection.getMutationState().toMutations(null).next().getSecond());
+            functionData.addAll(connection.getMutationState().toMutations().next().getSecond());
             connection.rollback();
 
             PreparedStatement functionUpsert = connection.prepareStatement(CREATE_FUNCTION);
@@ -1549,7 +1549,7 @@ public class MetaDataClient {
             List<PName> physicalNames = Collections.emptyList();
             boolean addSaltColumn = false;
             boolean rowKeyOrderOptimizable = true;
-			Long timestamp = null;
+            Long timestamp = null;
             if (parent != null && tableType == PTableType.INDEX) {
             	transactional = parent.isTransactional();
                 timestamp = TransactionUtil.getTableTimestamp(connection, transactional);
@@ -1560,7 +1560,7 @@ public class MetaDataClient {
 	                // table instead of only a view? We don't have anywhere to put the link
 	                // from the table to the index, though.
 	                if (indexType == IndexType.LOCAL || (parent.getType() == PTableType.VIEW && parent.getViewType() != ViewType.MAPPED)) {
-	                    PName physicalName = parent.getPhysicalName();
+	                	PName physicalName = parent.getPhysicalName();
 	                    saltBucketNum = parent.getBucketNum();
 	                    addSaltColumn = (saltBucketNum != null && indexType != IndexType.LOCAL);
 	                    defaultFamilyName = parent.getDefaultFamilyName() == null ? null : parent.getDefaultFamilyName().getString();
@@ -1573,30 +1573,6 @@ public class MetaDataClient {
 	                        physicalNames = Collections.singletonList(PNameFactory.newName(MetaDataUtil.getViewIndexPhysicalName(physicalName.getBytes())));
 	                    }
                     }
-    
-                    multiTenant = parent.isMultiTenant();
-                    parentTableName = parent.getTableName().getString();
-                    // Pass through data table sequence number so we can check it hasn't changed
-                    PreparedStatement incrementStatement = connection.prepareStatement(INCREMENT_SEQ_NUM);
-                    incrementStatement.setString(1, connection.getTenantId() == null ? null : connection.getTenantId().getString());
-                    incrementStatement.setString(2, schemaName);
-                    incrementStatement.setString(3, parentTableName);
-                    incrementStatement.setLong(4, parent.getSequenceNumber());
-                    incrementStatement.execute();
-                    // Get list of mutations and add to table meta data that will be passed to server
-                    // to guarantee order. This row will always end up last
-                    tableMetaData.addAll(connection.getMutationState().toMutations(timestamp).next().getSecond());
-                    connection.rollback();
-    
-                    // Add row linking from data table row to index table row
-                    PreparedStatement linkStatement = connection.prepareStatement(CREATE_LINK);
-                    linkStatement.setString(1, connection.getTenantId() == null ? null : connection.getTenantId().getString());
-                    linkStatement.setString(2, schemaName);
-                    linkStatement.setString(3, parentTableName);
-                    linkStatement.setString(4, tableName);
-                    linkStatement.setByte(5, LinkType.INDEX_TABLE.getSerializedValue());
-                    linkStatement.setLong(6, parent.getSequenceNumber());
-                    linkStatement.execute();
                 }
 
                 multiTenant = parent.isMultiTenant();
@@ -2754,7 +2730,6 @@ public class MetaDataClient {
                 }
                 long seqNum = table.getSequenceNumber();
                 if (changingPhoenixTableProperty || columnDefs.size() > 0) { 
-                    // TODO: verify master has fix for multiple data columns added and unit test
                     seqNum = incrementTableSeqNum(table, statement.getTableType(), columnDefs.size(), isTransactional, isImmutableRows, disableWAL, multiTenant, storeNulls);
                     tableMetaData.addAll(connection.getMutationState().toMutations(timeStamp).next().getSecond());
                     connection.rollback();

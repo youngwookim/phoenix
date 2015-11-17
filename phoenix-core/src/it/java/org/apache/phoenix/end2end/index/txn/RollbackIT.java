@@ -16,9 +16,12 @@ import java.util.Properties;
 
 import org.apache.phoenix.end2end.BaseHBaseManagedTimeIT;
 import org.apache.phoenix.end2end.Shadower;
+import org.apache.phoenix.query.BaseTest;
 import org.apache.phoenix.query.QueryServices;
 import org.apache.phoenix.util.PropertiesUtil;
 import org.apache.phoenix.util.ReadOnlyProps;
+import org.apache.phoenix.util.SchemaUtil;
+import org.apache.phoenix.util.TestUtil;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -28,10 +31,13 @@ import org.junit.runners.Parameterized.Parameters;
 import com.google.common.collect.Maps;
 
 @RunWith(Parameterized.class)
-public class RollbackIT extends BaseHBaseManagedTimeIT {
+public class RollbackIT extends BaseTest {
 	
 	private final boolean localIndex;
 	private final boolean mutable;
+	private String tableName;
+    private String indexName;
+    private String fullTableName;
 
 	public RollbackIT(boolean localIndex, boolean mutable) {
 		this.localIndex = localIndex;
@@ -43,9 +49,6 @@ public class RollbackIT extends BaseHBaseManagedTimeIT {
     public static void doSetup() throws Exception {
         Map<String,String> props = Maps.newHashMapWithExpectedSize(2);
         props.put(QueryServices.DEFAULT_TRANSACTIONAL_ATTRIB, Boolean.toString(true));
-        // We need this b/c we don't allow a transactional table to be created if the underlying
-        // HBase table already exists (since we don't know if it was transactional before).
-        props.put(QueryServices.DROP_METADATA_ATTRIB, Boolean.toString(true));
         setUpTestDriver(new ReadOnlyProps(props.entrySet().iterator()));
     }
 	
@@ -57,20 +60,27 @@ public class RollbackIT extends BaseHBaseManagedTimeIT {
            });
     }
     
+    private void setTableNames() {
+		tableName = TestUtil.DEFAULT_DATA_TABLE_NAME + "_1_" + System.currentTimeMillis();
+        indexName = "IDX1"  + "_" + System.currentTimeMillis();
+        fullTableName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, tableName);
+	}
+    
     @Test
     public void testRollbackOfUncommittedKeyValueIndexInsert() throws Exception {
+    	setTableNames();
         Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
         Connection conn = DriverManager.getConnection(getUrl(), props);
         conn.setAutoCommit(false);
         try {
             Statement stmt = conn.createStatement();
-            stmt.execute("CREATE TABLE DEMO(k VARCHAR PRIMARY KEY, v1 VARCHAR, v2 VARCHAR)"+(!mutable? " IMMUTABLE_ROWS=true" : ""));
-            stmt.execute("CREATE "+(localIndex? "LOCAL " : "")+"INDEX DEMO_idx ON DEMO (v1) INCLUDE(v2)");
+            stmt.execute("CREATE TABLE " + fullTableName + "(k VARCHAR PRIMARY KEY, v1 VARCHAR, v2 VARCHAR)"+(!mutable? " IMMUTABLE_ROWS=true" : ""));
+            stmt.execute("CREATE "+(localIndex? "LOCAL " : "")+"INDEX " + indexName + " ON " + fullTableName + " (v1) INCLUDE(v2)");
             
-            stmt.executeUpdate("upsert into DEMO values('x', 'y', 'a')");
+            stmt.executeUpdate("upsert into " + fullTableName + " values('x', 'y', 'a')");
             
             //assert values in data table
-            ResultSet rs = stmt.executeQuery("select k, v1, v2 from DEMO ORDER BY k");
+            ResultSet rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from " + fullTableName);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("y", rs.getString(2));
@@ -78,7 +88,7 @@ public class RollbackIT extends BaseHBaseManagedTimeIT {
             assertFalse(rs.next());
             
             //assert values in index table
-            rs = stmt.executeQuery("select k, v1, v2  from DEMO ORDER BY v1");
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName + ")*/ k, v1, v2  from " + fullTableName);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("y", rs.getString(2));
@@ -88,11 +98,11 @@ public class RollbackIT extends BaseHBaseManagedTimeIT {
             conn.rollback();
             
             //assert values in data table
-            rs = stmt.executeQuery("select k, v1, v2 from DEMO ORDER BY k");
+            rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from " + fullTableName);
             assertFalse(rs.next());
             
             //assert values in index table
-            rs = stmt.executeQuery("select k, v1, v2 from DEMO ORDER BY v1");
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName + ")*/ k, v1, v2 from " + fullTableName);
             assertFalse(rs.next());
         } finally {
             conn.close();
@@ -101,17 +111,18 @@ public class RollbackIT extends BaseHBaseManagedTimeIT {
     
     @Test
     public void testRollbackOfUncommittedRowKeyIndexInsert() throws Exception {
+    	setTableNames();
         Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
         Connection conn = DriverManager.getConnection(getUrl(), props);
         conn.setAutoCommit(false);
         try {
             Statement stmt = conn.createStatement();
-            stmt.execute("CREATE TABLE DEMO(k VARCHAR, v1 VARCHAR, v2 VARCHAR, CONSTRAINT pk PRIMARY KEY (v1, v2))"+(!mutable? " IMMUTABLE_ROWS=true" : ""));
-            stmt.execute("CREATE "+(localIndex? "LOCAL " : "")+"INDEX DEMO_idx ON DEMO (v1, k)");
+            stmt.execute("CREATE TABLE " + fullTableName + "(k VARCHAR, v1 VARCHAR, v2 VARCHAR, CONSTRAINT pk PRIMARY KEY (v1, v2))"+(!mutable? " IMMUTABLE_ROWS=true" : ""));
+            stmt.execute("CREATE "+(localIndex? "LOCAL " : "")+"INDEX " + indexName + " ON " + fullTableName + "(v1, k)");
             
-            stmt.executeUpdate("upsert into DEMO values('x', 'y', 'a')");
+            stmt.executeUpdate("upsert into " + fullTableName + " values('x', 'y', 'a')");
 
-            ResultSet rs = stmt.executeQuery("select k, v1, v2 from DEMO ORDER BY v1");
+            ResultSet rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from " + fullTableName);
             
             //assert values in data table
             assertTrue(rs.next());
@@ -121,7 +132,7 @@ public class RollbackIT extends BaseHBaseManagedTimeIT {
             assertFalse(rs.next());
             
             //assert values in index table
-            rs = stmt.executeQuery("select k, v1 from DEMO ORDER BY v2");
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName + ")*/ k, v1 from " + fullTableName);
             assertTrue(rs.next());
             assertEquals("x", rs.getString(1));
             assertEquals("y", rs.getString(2));
@@ -130,11 +141,11 @@ public class RollbackIT extends BaseHBaseManagedTimeIT {
             conn.rollback();
             
             //assert values in data table
-            rs = stmt.executeQuery("select k, v1, v2 from DEMO");
+            rs = stmt.executeQuery("select /*+ NO_INDEX */ k, v1, v2 from " + fullTableName);
             assertFalse(rs.next());
             
             //assert values in index table
-            rs = stmt.executeQuery("select k, v1 from DEMO ORDER BY v2");
+            rs = stmt.executeQuery("select /*+ INDEX(" + indexName + ")*/ k, v1 from " + fullTableName);
             assertFalse(rs.next());
         } finally {
             conn.close();

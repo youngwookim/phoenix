@@ -18,6 +18,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.sql.Connection;
+import java.sql.Date;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -64,8 +65,7 @@ public class TransactionIT extends BaseHBaseManagedTimeIT {
 	@Test
 	public void testReadOwnWrites() throws Exception {
 		String selectSql = "SELECT * FROM "+FULL_TABLE_NAME;
-		Connection conn = DriverManager.getConnection(getUrl());
-		try {
+		try (Connection conn = DriverManager.getConnection(getUrl())) {
 			conn.setAutoCommit(false);
 			ResultSet rs = conn.createStatement().executeQuery(selectSql);
 	     	assertFalse(rs.next());
@@ -92,17 +92,42 @@ public class TransactionIT extends BaseHBaseManagedTimeIT {
 	        TestUtil.validateRowKeyColumns(rs, 2);
 	        assertFalse(rs.next());
 		}
-        finally {
-        	conn.close();
-        }
+	}
+	
+	@Test
+	public void testTxnClosedCorrecty() throws Exception {
+		String selectSql = "SELECT * FROM "+FULL_TABLE_NAME;
+		try (Connection conn = DriverManager.getConnection(getUrl())) {
+			conn.setAutoCommit(false);
+			ResultSet rs = conn.createStatement().executeQuery(selectSql);
+	     	assertFalse(rs.next());
+	     	
+	        String upsert = "UPSERT INTO " + FULL_TABLE_NAME + "(varchar_pk, char_pk, int_pk, long_pk, decimal_pk, date_pk) VALUES(?, ?, ?, ?, ?, ?)";
+	        PreparedStatement stmt = conn.prepareStatement(upsert);
+			// upsert two rows
+			TestUtil.setRowKeyColumns(stmt, 1);
+			stmt.execute();
+			TestUtil.setRowKeyColumns(stmt, 2);
+			stmt.execute();
+	        
+	        // verify rows can be read even though commit has not been called
+			rs = conn.createStatement().executeQuery(selectSql);
+			TestUtil.validateRowKeyColumns(rs, 1);
+			TestUtil.validateRowKeyColumns(rs, 2);
+	        assertFalse(rs.next());
+	        
+	        conn.close();
+	        // wait for any open txns to time out
+	        Thread.sleep(DEFAULT_TXN_TIMEOUT_SECONDS*1000+10000);
+	        assertTrue("There should be no invalid transactions", txManager.getInvalidSize()==0);
+		}
 	}
 	
     @Test
     public void testDelete() throws Exception {
         String selectSQL = "SELECT * FROM " + FULL_TABLE_NAME;
-        Connection conn1 = DriverManager.getConnection(getUrl());
-        Connection conn2 = DriverManager.getConnection(getUrl());
-        try {
+        try (Connection conn1 = DriverManager.getConnection(getUrl()); 
+        		Connection conn2 = DriverManager.getConnection(getUrl())) {
             conn1.setAutoCommit(false);
             ResultSet rs = conn1.createStatement().executeQuery(selectSQL);
             assertFalse(rs.next());
@@ -132,42 +157,32 @@ public class TransactionIT extends BaseHBaseManagedTimeIT {
             rs = conn1.createStatement().executeQuery(selectSQL);
             assertFalse(rs.next());
         }
-        finally {
-            conn1.close();
-        }
     }
     
 	@Test
 	public void testAutoCommitQuerySingleTable() throws Exception {
-		Connection conn = DriverManager.getConnection(getUrl());
-		try {
+		try (Connection conn = DriverManager.getConnection(getUrl())) {
 			conn.setAutoCommit(true);
 			// verify no rows returned
 			ResultSet rs = conn.createStatement().executeQuery("SELECT * FROM " + FULL_TABLE_NAME);
 			assertFalse(rs.next());
-		} finally {
-			conn.close();
 		}
 	}
 	
     @Test
     public void testAutoCommitQueryMultiTables() throws Exception {
-        Connection conn = DriverManager.getConnection(getUrl());
-        try {
+    	try (Connection conn = DriverManager.getConnection(getUrl())) {
             conn.setAutoCommit(true);
             // verify no rows returned
             ResultSet rs = conn.createStatement().executeQuery("SELECT * FROM " + FULL_TABLE_NAME + " a JOIN " + FULL_TABLE_NAME + " b ON (a.long_pk = b.int_pk)");
             assertFalse(rs.next());
-        } finally {
-            conn.close();
-        }
+        } 
     }
     
 	@Test
 	public void testColConflicts() throws Exception {
-		Connection conn1 = DriverManager.getConnection(getUrl());
-		Connection conn2 = DriverManager.getConnection(getUrl());
-		try {
+		try (Connection conn1 = DriverManager.getConnection(getUrl()); 
+        		Connection conn2 = DriverManager.getConnection(getUrl())) {
 			conn1.setAutoCommit(false);
 			conn2.setAutoCommit(false);
 			String selectSql = "SELECT * FROM "+FULL_TABLE_NAME;
@@ -196,15 +211,11 @@ public class TransactionIT extends BaseHBaseManagedTimeIT {
  	        	assertEquals(e.getErrorCode(), SQLExceptionCode.TRANSACTION_CONFLICT_EXCEPTION.getErrorCode());
  	        }
 		}
-        finally {
-        	conn1.close();
-        }
 	}
 	
 	private void testRowConflicts() throws Exception {
-		Connection conn1 = DriverManager.getConnection(getUrl());
-		Connection conn2 = DriverManager.getConnection(getUrl());
-		try {
+		try (Connection conn1 = DriverManager.getConnection(getUrl()); 
+        		Connection conn2 = DriverManager.getConnection(getUrl())) {
 			conn1.setAutoCommit(false);
 			conn2.setAutoCommit(false);
 			String selectSql = "SELECT * FROM "+FULL_TABLE_NAME;
@@ -236,10 +247,6 @@ public class TransactionIT extends BaseHBaseManagedTimeIT {
  	        	assertEquals(e.getErrorCode(), SQLExceptionCode.TRANSACTION_CONFLICT_EXCEPTION.getErrorCode());
  	        }
 		}
-        finally {
-        	conn1.close();
-        	conn2.close();
-        }
 	}
 	
 	@Test
@@ -475,4 +482,33 @@ public class TransactionIT extends BaseHBaseManagedTimeIT {
         assertTrue(table.isTransactional());
         assertTrue(htable.getTableDescriptor().getCoprocessors().contains(TransactionProcessor.class.getName()));
     }
+
+    public void testCurrentDate() throws Exception {
+		String selectSql = "SELECT current_date() FROM "+FULL_TABLE_NAME;
+		try (Connection conn = DriverManager.getConnection(getUrl())) {
+			conn.setAutoCommit(false);
+			ResultSet rs = conn.createStatement().executeQuery(selectSql);
+	     	assertFalse(rs.next());
+	     	
+	        String upsert = "UPSERT INTO " + FULL_TABLE_NAME + "(varchar_pk, char_pk, int_pk, long_pk, decimal_pk, date_pk) VALUES(?, ?, ?, ?, ?, ?)";
+	        PreparedStatement stmt = conn.prepareStatement(upsert);
+			// upsert two rows
+			TestUtil.setRowKeyColumns(stmt, 1);
+			stmt.execute();
+			conn.commit();
+			
+			rs = conn.createStatement().executeQuery(selectSql);
+			assertTrue(rs.next());
+			Date date1 = rs.getDate(1);
+	     	assertFalse(rs.next());
+	     	
+	     	Thread.sleep(1000);
+	     	
+	     	rs = conn.createStatement().executeQuery(selectSql);
+			assertTrue(rs.next());
+			Date date2 = rs.getDate(1);
+	     	assertFalse(rs.next());
+	     	assertTrue("current_date() should change while executing multiple statements", date2.getTime() > date1.getTime());
+		}
+	}
 }

@@ -177,7 +177,7 @@ public class MutationState implements SQLCloseable {
     
     public boolean checkpoint(MutationPlan plan) throws SQLException {
         Transaction currentTx = getTransaction();
-        if (currentTx == null || plan.getTargetRef() == null || plan.getTargetRef().getTable() == null || !plan.getTargetRef().getTable().isTransactional()) {
+        if (getTransaction() == null || plan.getTargetRef() == null || plan.getTargetRef().getTable() == null || !plan.getTargetRef().getTable().isTransactional()) {
             return false;
         }
         Set<TableRef> sources = plan.getSourceRefs();
@@ -215,10 +215,10 @@ public class MutationState implements SQLCloseable {
             if (hasUncommittedData) {
                 try {
                 	if (txContext == null) {
-                		tx = currentTx = connection.getQueryServices().getTransactionSystemClient().checkpoint(currentTx);
+                		currentTx = tx = connection.getQueryServices().getTransactionSystemClient().checkpoint(currentTx);
                 	}  else {
                 		txContext.checkpoint();
-                		tx = currentTx = txContext.getCurrentTransaction();
+                		currentTx = tx = txContext.getCurrentTransaction();
                 	}
                     // Since we've checkpointed, we can clear out uncommitted set, since a statement run afterwards
                     // should see all this data.
@@ -527,6 +527,14 @@ public class MutationState implements SQLCloseable {
      */
     public Iterator<Pair<byte[],List<Mutation>>> toMutations(Long timestamp) {
         return toMutations(false, timestamp);
+    }
+    
+    public Iterator<Pair<byte[],List<Mutation>>> toMutations() {
+        return toMutations(false, null);
+    }
+    
+    public Iterator<Pair<byte[],List<Mutation>>> toMutations(final boolean includeMutableIndexes) {
+        return toMutations(includeMutableIndexes, null);
     }
     
     public Iterator<Pair<byte[],List<Mutation>>> toMutations(final boolean includeMutableIndexes, final Long tableTimestamp) {

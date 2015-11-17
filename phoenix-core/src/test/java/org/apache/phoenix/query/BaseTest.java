@@ -207,8 +207,10 @@ public abstract class BaseTest {
             "   CONSTRAINT pk PRIMARY KEY (varchar_pk, char_pk, int_pk, long_pk DESC, decimal_pk, date_pk)) ";
     private static final Map<String,String> tableDDLMap;
     private static final Logger logger = LoggerFactory.getLogger(BaseTest.class);
+    protected static final int DEFAULT_TXN_TIMEOUT_SECONDS = 30;
     private static ZKClientService zkClient;
     private static TransactionService txService;
+    protected static TransactionManager txManager;
     @ClassRule
     public static TemporaryFolder tmpFolder = new TemporaryFolder();
     
@@ -517,7 +519,7 @@ public abstract class BaseTest {
         config.setInt(TxConstants.Service.CFG_DATA_TX_CLIENT_ATTEMPTS, 1);
         config.setInt(TxConstants.Service.CFG_DATA_TX_BIND_PORT, Networks.getRandomPort());
         config.set(TxConstants.Manager.CFG_TX_SNAPSHOT_DIR, tmpFolder.newFolder().getAbsolutePath());
-        config.setInt(TxConstants.Manager.CFG_TX_TIMEOUT, 600);
+        config.setInt(TxConstants.Manager.CFG_TX_TIMEOUT, DEFAULT_TXN_TIMEOUT_SECONDS);
 
         ConnectionInfo connInfo = ConnectionInfo.create(getUrl());
         zkClient = ZKClientServices.delegate(
@@ -534,7 +536,7 @@ public abstract class BaseTest {
         zkClient.startAndWait();
 
         DiscoveryService discovery = new ZKDiscoveryService(zkClient);
-        TransactionManager txManager = new TransactionManager(config, new InMemoryTransactionStateStorage(), new TxMetricsCollector());
+        txManager = new TransactionManager(config, new InMemoryTransactionStateStorage(), new TxMetricsCollector());
         txService = new TransactionService(config, zkClient, discovery, Providers.of(txManager));
         txService.startAndWait();
     }

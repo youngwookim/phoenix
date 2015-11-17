@@ -463,7 +463,7 @@ public class PhoenixConnection implements Connection, org.apache.phoenix.jdbc.Jd
         // from modifying this list.
         this.statements = Lists.newArrayList();
         try {
-            mutationState.clear();
+            mutationState.rollback();
         } finally {
             try {
                 SQLCloseables.closeAll(statements);
