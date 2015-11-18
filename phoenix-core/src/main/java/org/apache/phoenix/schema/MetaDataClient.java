@@ -200,6 +200,8 @@ import org.apache.phoenix.util.UpgradeUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import co.cask.tephra.TxConstants;
+
 import com.google.common.base.Objects;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.ListMultimap;
@@ -207,8 +209,6 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.common.primitives.Ints;
-
-import co.cask.tephra.TxConstants;
 
 public class MetaDataClient {
     private static final Logger logger = LoggerFactory.getLogger(MetaDataClient.class);
@@ -1706,8 +1706,13 @@ public class MetaDataClient {
             
             boolean sharedTable = statement.getTableType() == PTableType.VIEW || indexId != null;
             if (transactional) { 
-                // FIXME: remove once Tephra handles storing multiple versions of a cell value, 
-            	// and allows ignoring empty key values for an operation
+                // Tephra uses an empty value cell as its delete marker, so we need to turn on
+                // storeNulls for transactional tables.
+                // If we use regular column delete markers (which is what non transactional tables
+                // use), then they get converted
+                // on the server, but this can mess up our secondary index code as the changes get
+                // committed prior to the
+                // maintenance code being able to see the prior state to update the rows correctly.
             	if (Boolean.FALSE.equals(storeNullsProp)) {
             		throw new SQLExceptionInfo.Builder(SQLExceptionCode.STORE_NULLS_MUST_BE_TRUE_FOR_TRANSACTIONAL)
             		.setSchemaName(schemaName).setTableName(tableName)

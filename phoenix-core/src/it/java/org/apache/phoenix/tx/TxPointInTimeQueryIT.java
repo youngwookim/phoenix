@@ -48,8 +48,7 @@ public class TxPointInTimeQueryIT extends BaseClientManagedTimeIT {
 		props.put(PhoenixRuntime.CURRENT_SCN_ATTRIB, Long.toString(ts));
 		try (Connection conn = DriverManager.getConnection(getUrl(), props);) {
 			try {
-				conn.createStatement()
-						.execute(
+				conn.createStatement().execute(
 								"CREATE TABLE t (k VARCHAR NOT NULL PRIMARY KEY, v1 VARCHAR) TRANSACTIONAL=true");
 				fail();
 			} catch (SQLException e) {
@@ -57,7 +56,7 @@ public class TxPointInTimeQueryIT extends BaseClientManagedTimeIT {
 						SQLExceptionCode.CANNOT_START_TRANSACTION_WITH_SCN_SET
 								.getErrorCode(), e.getErrorCode());
 			}
-		}
-	}
+        }
+    }
 
 }
