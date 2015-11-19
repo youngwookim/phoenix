@@ -464,6 +464,8 @@ public class PhoenixConnection implements Connection, org.apache.phoenix.jdbc.Jd
         this.statements = Lists.newArrayList();
         try {
             mutationState.rollback();
+        } catch (SQLException e) {
+            // ignore any exceptions while rolling back
         } finally {
             try {
                 SQLCloseables.closeAll(statements);

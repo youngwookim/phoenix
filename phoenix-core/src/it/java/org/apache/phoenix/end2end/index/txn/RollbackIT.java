@@ -78,8 +78,8 @@ public class RollbackIT extends BaseTest {
     }
     
     private void setTableNames() {
-		tableName = TestUtil.DEFAULT_DATA_TABLE_NAME + "_1_" + System.currentTimeMillis();
-        indexName = "IDX1"  + "_" + System.currentTimeMillis();
+		tableName = TestUtil.DEFAULT_DATA_TABLE_NAME + "_" + System.currentTimeMillis();
+        indexName = "IDX"  + "_" + System.currentTimeMillis();
         fullTableName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, tableName);
 	}
     
