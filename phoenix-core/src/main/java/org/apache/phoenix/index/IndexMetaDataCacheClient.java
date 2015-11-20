@@ -66,7 +66,6 @@ public class IndexMetaDataCacheClient {
     
     /**
      * Send the index metadata cahce to all region servers for regions that will handle the mutations.
-     * @param txState TODO
      * @return client-side {@link ServerCache} representing the added index metadata cache
      * @throws SQLException 
      * @throws MaxServerCacheSizeExceededException if size of hash cache exceeds max allowed

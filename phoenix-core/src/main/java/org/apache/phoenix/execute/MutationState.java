@@ -84,12 +84,6 @@ import org.apache.phoenix.util.TransactionUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.base.Predicate;
-import com.google.common.collect.Iterators;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
-
 import co.cask.tephra.Transaction;
 import co.cask.tephra.Transaction.VisibilityLevel;
 import co.cask.tephra.TransactionAware;
@@ -98,6 +92,12 @@ import co.cask.tephra.TransactionContext;
 import co.cask.tephra.TransactionFailureException;
 import co.cask.tephra.TransactionSystemClient;
 import co.cask.tephra.hbase11.TransactionAwareHTable;
+
+import com.google.common.base.Predicate;
+import com.google.common.collect.Iterators;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 
 /**
  * 
@@ -175,7 +175,7 @@ public class MutationState implements SQLCloseable {
         throwIfTooBig();
     }
     
-    public boolean checkpoint(MutationPlan plan) throws SQLException {
+    public boolean checkpointIfNeccessary(MutationPlan plan) throws SQLException {
         Transaction currentTx = getTransaction();
         if (getTransaction() == null || plan.getTargetRef() == null || plan.getTargetRef().getTable() == null || !plan.getTargetRef().getTable().isTransactional()) {
             return false;
@@ -296,7 +296,7 @@ public class MutationState implements SQLCloseable {
     
     public boolean startTransaction() throws SQLException {
         if (txContext == null) {
-            throw new SQLException("No transaction context"); // TODO: error code
+            throw new SQLExceptionInfo.Builder(SQLExceptionCode.NULL_TRANSACTION_CONTEXT).build().buildException();
         }
         
 		if (connection.getSCN() != null) {
@@ -312,7 +312,7 @@ public class MutationState implements SQLCloseable {
                 return true;
             }
         } catch (TransactionFailureException e) {
-            throw new SQLException(e); // TODO: error code
+            throw new SQLExceptionInfo.Builder(SQLExceptionCode.TRANSACTION_FAILED).setRootCause(e).build().buildException();
         }
         return false;
     }
@@ -544,7 +544,6 @@ public class MutationState implements SQLCloseable {
         }
         Long scn = connection.getSCN();
         final long timestamp = (tableTimestamp!=null && tableTimestamp!=QueryConstants.UNSET_TIMESTAMP) ? tableTimestamp : (scn == null ? HConstants.LATEST_TIMESTAMP : scn);
-//        final long timestamp = (scn == null ? HConstants.LATEST_TIMESTAMP : scn);
         return new Iterator<Pair<byte[],List<Mutation>>>() {
             private Map.Entry<TableRef, Map<ImmutableBytesPtr,RowMutationState>> current = iterator.next();
             private Iterator<Pair<byte[],List<Mutation>>> innerIterator = init();
@@ -722,7 +721,6 @@ public class MutationState implements SQLCloseable {
         int i = 0;
         long[] serverTimeStamps = null;
         boolean sendAll = false;
-        // Validate up front if not transactional so that we 
         if (tableRefIterator == null) {
             serverTimeStamps = validateAll();
             tableRefIterator = mutations.keySet().iterator();
@@ -928,7 +926,7 @@ public class MutationState implements SQLCloseable {
         return cache;
     }
     
-    public void clear() throws SQLException {
+    private void clear() throws SQLException {
         this.mutations.clear();
         numRows = 0;
     }
@@ -986,7 +984,7 @@ public class MutationState implements SQLCloseable {
                 } catch (TransactionFailureException e) {
                     try {
                         txContext.abort(e);
-                        throw TransactionUtil.getSQLException(e);
+                        throw new SQLExceptionInfo.Builder(SQLExceptionCode.TRANSACTION_FAILED).setRootCause(e).build().buildException();
                     } catch (TransactionFailureException e1) {
                         throw TransactionUtil.getSQLException(e);
                     }
@@ -1000,8 +998,9 @@ public class MutationState implements SQLCloseable {
     }
 
     /**
-     * Send mutations to hbase, so they are visible to subsequent reads,
-     * starting a transaction if transactional and one has not yet been started.
+     * Support read-your-own-write semantics by sending uncommitted data to HBase prior to running a
+     * query. In this way, they are visible to subsequent reads but are not actually committed until
+     * commit is called.
      * @param tableRefs
      * @return true if at least partially transactional and false otherwise.
      * @throws SQLException

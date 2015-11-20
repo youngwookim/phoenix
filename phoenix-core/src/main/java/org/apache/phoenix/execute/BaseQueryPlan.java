@@ -223,6 +223,7 @@ public abstract class BaseQueryPlan implements QueryPlan {
         if (table.getType() != PTableType.SYSTEM) {
             scan.setConsistency(connection.getConsistency());
         }
+        // TODO fix this in PHOENIX-2415 Support ROW_TIMESTAMP with transactional tables
         if (!table.isTransactional()) {
 	                // Get the time range of row_timestamp column
 	        TimeRange rowTimestampRange = context.getScanRanges().getRowTimestampRange();

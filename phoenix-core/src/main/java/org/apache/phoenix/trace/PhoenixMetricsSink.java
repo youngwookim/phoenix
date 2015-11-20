@@ -177,6 +177,10 @@ public class PhoenixMetricsSink implements MetricsSink {
                         ANNOTATION_COUNT + " smallint" +
                         "  CONSTRAINT pk PRIMARY KEY (" + TRACE.columnName + ", "
                         + PARENT.columnName + ", " + SPAN.columnName + "))\n" +
+                        // We have a config parameter that can be set so that tables are
+                        // transactional by default. If that's set, we still don't want these system
+                        // tables created as transactional tables, make these table non
+                        // transactional
                         PhoenixDatabaseMetaData.TRANSACTIONAL + "=" + Boolean.FALSE;
 ;
         PreparedStatement stmt = conn.prepareStatement(ddl);

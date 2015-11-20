@@ -273,6 +273,8 @@ public enum SQLExceptionCode {
     CANNOT_START_TRANSACTION_WITH_SCN_SET(1073, "44A04", "Cannot start a transaction on a connection with SCN set"),
     TX_MAX_VERSIONS_MUST_BE_GREATER_THAN_ONE(1074, "44A05", "A transactional table must define VERSION of greater than one"),
     CANNOT_SPECIFY_SCN_FOR_TXN_TABLE(1075, "44A06", "Cannot use a connection with SCN set for a transactional table"),
+    NULL_TRANSACTION_CONTEXT(1076, "42901", "No Tranasction Context available"),
+    TRANSACTION_FAILED(1077, "42901", "Transaction Failure "),
 
     /** Sequence related */
     SEQUENCE_ALREADY_EXIST(1200, "42Z00", "Sequence already exists.", new Factory() {

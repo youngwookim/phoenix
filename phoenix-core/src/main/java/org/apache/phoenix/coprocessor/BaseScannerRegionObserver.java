@@ -21,8 +21,6 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Set;
 
-import co.cask.tephra.Transaction;
-
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.CoprocessorEnvironment;
@@ -58,6 +56,8 @@ import org.apache.phoenix.schema.tuple.Tuple;
 import org.apache.phoenix.util.IndexUtil;
 import org.apache.phoenix.util.ScanUtil;
 import org.apache.phoenix.util.ServerUtil;
+
+import co.cask.tephra.Transaction;
 
 import com.google.common.collect.ImmutableList;
 
@@ -246,7 +246,7 @@ abstract public class BaseScannerRegionObserver extends BaseRegionObserver {
      * @param tupleProjector
      * @param dataRegion
      * @param indexMaintainer
-     * @param tx TODO
+     * @param tx current transaction
      * @param viewConstants
      */
     protected RegionScanner getWrappedScanner(final ObserverContext<RegionCoprocessorEnvironment> c,

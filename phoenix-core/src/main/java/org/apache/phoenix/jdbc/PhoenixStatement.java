@@ -334,7 +334,7 @@ public class PhoenixStatement implements Statement, SQLCloseable, org.apache.pho
                                 }
                                 Iterator<TableRef> tableRefs = plan.getSourceRefs().iterator();
                                 state.sendUncommitted(tableRefs);
-                                state.checkpoint(plan);
+                                state.checkpointIfNeccessary(plan);
                                 MutationState lastState = plan.execute();
                                 state.join(lastState);
                                 if (connection.getAutoCommit()) {

@@ -71,9 +71,9 @@ import org.apache.phoenix.util.QueryUtil;
 import org.apache.phoenix.util.ReadOnlyProps;
 import org.apache.phoenix.util.SchemaUtil;
 import org.apache.phoenix.util.StringUtil;
+import org.apache.phoenix.util.TestUtil;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -93,15 +93,14 @@ import org.junit.runners.Parameterized.Parameters;
 @RunWith(Parameterized.class)
 public class MutableIndexFailureIT extends BaseTest {
     private static final int NUM_SLAVES = 4;
-    private static String url;
     private static PhoenixTestDriver driver;
     private static HBaseTestingUtility util;
     private Timer scheduleTimer;
 
-    private static final String SCHEMA_NAME = "S";
-    private static final String INDEX_TABLE_NAME = "I";
-    private static final String DATA_TABLE_FULL_NAME = SchemaUtil.getTableName(SCHEMA_NAME, "T");
-    private static final String INDEX_TABLE_FULL_NAME = SchemaUtil.getTableName(SCHEMA_NAME, "I");
+    private String tableName;
+    private String indexName;
+    private String fullTableName;
+    private String fullIndexName;
 
     private boolean transactional;
     private final String tableDDLOptions;
@@ -128,11 +127,20 @@ public class MutableIndexFailureIT extends BaseTest {
         url = JDBC_PROTOCOL + JDBC_PROTOCOL_SEPARATOR + LOCALHOST + JDBC_PROTOCOL_SEPARATOR + clientPort
                 + JDBC_PROTOCOL_TERMINATOR + PHOENIX_TEST_DRIVER_URL_PARAM;
         driver = initAndRegisterDriver(url, ReadOnlyProps.EMPTY_PROPS);
+        clusterInitialized = true;
+        setupTxManager();
     }
     
     @Parameters(name = "transactional = {0}")
     public static Collection<Boolean[]> data() {
         return Arrays.asList(new Boolean[][] { { false }, { true } });
+    }
+    
+    private void setTableNames() {
+        tableName = TestUtil.DEFAULT_DATA_TABLE_NAME + "_" + System.currentTimeMillis();
+        indexName = "IDX"  + "_" + System.currentTimeMillis();
+        fullTableName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, tableName);
+        fullIndexName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, indexName);
     }
 
     @After
@@ -151,53 +159,54 @@ public class MutableIndexFailureIT extends BaseTest {
         }
     }
 
-    @Ignore("See PHOENIX-2331")
+//    @Ignore("See PHOENIX-2331")
     @Test(timeout=300000)
     public void testWriteFailureDisablesLocalIndex() throws Exception {
         helpTestWriteFailureDisablesIndex(true);
     }
  
-    @Ignore("See PHOENIX-2332")
+//    @Ignore("See PHOENIX-2332")
     @Test(timeout=300000)
     public void testWriteFailureDisablesIndex() throws Exception {
         helpTestWriteFailureDisablesIndex(false);
     }
     
     public void helpTestWriteFailureDisablesIndex(boolean localIndex) throws Exception {
+        setTableNames();
         Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
         try (Connection conn = driver.connect(url, props)) {
             String query;
             ResultSet rs;
             conn.setAutoCommit(false);
             conn.createStatement().execute(
-                    "CREATE TABLE " + DATA_TABLE_FULL_NAME + " (k VARCHAR NOT NULL PRIMARY KEY, v1 VARCHAR, v2 VARCHAR)");
-            query = "SELECT * FROM " + DATA_TABLE_FULL_NAME;
+                    "CREATE TABLE " + fullTableName + " (k VARCHAR NOT NULL PRIMARY KEY, v1 VARCHAR, v2 VARCHAR) "+tableDDLOptions);
+            query = "SELECT * FROM " + fullTableName;
             rs = conn.createStatement().executeQuery(query);
             assertFalse(rs.next());
     
             if(localIndex) {
                 conn.createStatement().execute(
-                    "CREATE LOCAL INDEX " + INDEX_TABLE_NAME + " ON " + DATA_TABLE_FULL_NAME + " (v1) INCLUDE (v2)");
+                    "CREATE LOCAL INDEX " + indexName + " ON " + fullTableName + " (v1) INCLUDE (v2)");
                 conn.createStatement().execute(
-                    "CREATE LOCAL INDEX " + INDEX_TABLE_NAME+ "_2" + " ON " + DATA_TABLE_FULL_NAME + " (v2) INCLUDE (v1)");
+                    "CREATE LOCAL INDEX " + indexName+ "_2" + " ON " + fullTableName + " (v2) INCLUDE (v1)");
             } else {
                 conn.createStatement().execute(
-                    "CREATE INDEX " + INDEX_TABLE_NAME + " ON " + DATA_TABLE_FULL_NAME + " (v1) INCLUDE (v2)");
+                    "CREATE INDEX " + indexName + " ON " + fullTableName + " (v1) INCLUDE (v2)");
             }
                 
-            query = "SELECT * FROM " + INDEX_TABLE_FULL_NAME;
+            query = "SELECT * FROM " + fullIndexName;
             rs = conn.createStatement().executeQuery(query);
             assertFalse(rs.next());
     
             // Verify the metadata for index is correct.
-            rs = conn.getMetaData().getTables(null, StringUtil.escapeLike(SCHEMA_NAME), INDEX_TABLE_NAME,
+            rs = conn.getMetaData().getTables(null, StringUtil.escapeLike(TestUtil.DEFAULT_SCHEMA_NAME), indexName,
                     new String[] { PTableType.INDEX.toString() });
             assertTrue(rs.next());
-            assertEquals(INDEX_TABLE_NAME, rs.getString(3));
+            assertEquals(indexName, rs.getString(3));
             assertEquals(PIndexState.ACTIVE.toString(), rs.getString("INDEX_STATE"));
             assertFalse(rs.next());
             
-            PreparedStatement stmt = conn.prepareStatement("UPSERT INTO " + DATA_TABLE_FULL_NAME + " VALUES(?,?,?)");
+            PreparedStatement stmt = conn.prepareStatement("UPSERT INTO " + fullTableName + " VALUES(?,?,?)");
             stmt.setString(1, "a");
             stmt.setString(2, "x");
             stmt.setString(3, "1");
@@ -206,7 +215,7 @@ public class MutableIndexFailureIT extends BaseTest {
     
             TableName indexTable =
                     TableName.valueOf(localIndex ? MetaDataUtil
-                            .getLocalIndexTableName(DATA_TABLE_FULL_NAME) : INDEX_TABLE_FULL_NAME);
+                            .getLocalIndexTableName(fullTableName) : fullIndexName);
             HBaseAdmin admin = this.util.getHBaseAdmin();
             HTableDescriptor indexTableDesc = admin.getTableDescriptor(indexTable);
             try{
@@ -214,7 +223,7 @@ public class MutableIndexFailureIT extends BaseTest {
               admin.deleteTable(indexTable);
             } catch (TableNotFoundException ignore) {}
     
-            stmt = conn.prepareStatement("UPSERT INTO " + DATA_TABLE_FULL_NAME + " VALUES(?,?,?)");
+            stmt = conn.prepareStatement("UPSERT INTO " + fullTableName + " VALUES(?,?,?)");
             stmt.setString(1, "a2");
             stmt.setString(2, "x2");
             stmt.setString(3, "2");
@@ -223,13 +232,8 @@ public class MutableIndexFailureIT extends BaseTest {
                 try {
                     conn.commit();
                     fail();
-                } catch (SQLException e1) {
-                    try {
-                        conn.rollback();
-                        fail();
-                    } catch (SQLException e2) {
-                        // rollback fails as well because index is disabled
-                    }
+                } catch (SQLException e) {
+                    conn.rollback();
                 }
             }
             else {
@@ -237,18 +241,20 @@ public class MutableIndexFailureIT extends BaseTest {
             }
     
             // Verify the metadata for index is correct.
-            rs = conn.getMetaData().getTables(null, StringUtil.escapeLike(SCHEMA_NAME), INDEX_TABLE_NAME,
+            rs = conn.getMetaData().getTables(null, StringUtil.escapeLike(TestUtil.DEFAULT_SCHEMA_NAME), indexName,
                     new String[] { PTableType.INDEX.toString() });
             assertTrue(rs.next());
-            assertEquals(INDEX_TABLE_NAME, rs.getString(3));
-            assertEquals(PIndexState.DISABLE.toString(), rs.getString("INDEX_STATE"));
+            assertEquals(indexName, rs.getString(3));
+            // the index is only disabled for non-txn tables upon index table write failure
+            PIndexState indexState =  transactional ? PIndexState.ACTIVE : PIndexState.DISABLE;
+            assertEquals(indexState.toString(), rs.getString("INDEX_STATE"));
             assertFalse(rs.next());
             if(localIndex) {
-                rs = conn.getMetaData().getTables(null, StringUtil.escapeLike(SCHEMA_NAME), INDEX_TABLE_NAME+"_2",
+                rs = conn.getMetaData().getTables(null, StringUtil.escapeLike(TestUtil.DEFAULT_SCHEMA_NAME), indexName + "_2",
                     new String[] { PTableType.INDEX.toString() });
                 assertTrue(rs.next());
-                assertEquals(INDEX_TABLE_NAME+"_2", rs.getString(3));
-                assertEquals(PIndexState.DISABLE.toString(), rs.getString("INDEX_STATE"));
+                assertEquals(indexName + "_2", rs.getString(3));
+                assertEquals(indexState.toString(), rs.getString("INDEX_STATE"));
                 assertFalse(rs.next());
             }
     
@@ -256,7 +262,7 @@ public class MutableIndexFailureIT extends BaseTest {
             // index has not been disabled
             if (!transactional) {
                 // Verify UPSERT on data table still work after index is disabled
-                stmt = conn.prepareStatement("UPSERT INTO " + DATA_TABLE_FULL_NAME + " VALUES(?,?,?)");
+                stmt = conn.prepareStatement("UPSERT INTO " + fullTableName + " VALUES(?,?,?)");
                 stmt.setString(1, "a3");
                 stmt.setString(2, "x3");
                 stmt.setString(3, "3");
@@ -267,10 +273,10 @@ public class MutableIndexFailureIT extends BaseTest {
             if (transactional) {
                 // if the table was transactional there should be 1 row (written before the index
                 // was disabled)
-                query = "SELECT /*+ NO_INDEX */ v2 FROM " + DATA_TABLE_FULL_NAME;
+                query = "SELECT /*+ NO_INDEX */ v2 FROM " + fullTableName;
                 rs = conn.createStatement().executeQuery("EXPLAIN " + query);
                 String expectedPlan =
-                        "CLIENT PARALLEL 1-WAY FULL SCAN OVER " + DATA_TABLE_FULL_NAME;
+                        "CLIENT PARALLEL 1-WAY FULL SCAN OVER " + fullTableName;
                 assertEquals(expectedPlan, QueryUtil.getExplainPlan(rs));
                 rs = conn.createStatement().executeQuery(query);
                 assertTrue(rs.next());
@@ -279,10 +285,10 @@ public class MutableIndexFailureIT extends BaseTest {
             } else {
                 // if the table was not transactional there should be three rows (all writes to data
                 // table should succeed)
-                query = "SELECT v2 FROM " + DATA_TABLE_FULL_NAME;
+                query = "SELECT v2 FROM " + fullTableName;
                 rs = conn.createStatement().executeQuery("EXPLAIN " + query);
                 String expectedPlan =
-                        "CLIENT PARALLEL 1-WAY FULL SCAN OVER " + DATA_TABLE_FULL_NAME;
+                        "CLIENT PARALLEL 1-WAY FULL SCAN OVER " + fullTableName;
                 assertEquals(expectedPlan, QueryUtil.getExplainPlan(rs));
                 rs = conn.createStatement().executeQuery(query);
                 assertTrue(rs.next());
@@ -298,14 +304,14 @@ public class MutableIndexFailureIT extends BaseTest {
             admin.createTable(indexTableDesc);
             do {
               Thread.sleep(15 * 1000); // sleep 15 secs
-              rs = conn.getMetaData().getTables(null, StringUtil.escapeLike(SCHEMA_NAME), INDEX_TABLE_NAME,
+              rs = conn.getMetaData().getTables(null, StringUtil.escapeLike(TestUtil.DEFAULT_SCHEMA_NAME), indexName,
                   new String[] { PTableType.INDEX.toString() });
               assertTrue(rs.next());
               if(PIndexState.ACTIVE.toString().equals(rs.getString("INDEX_STATE"))){
                   break;
               }
               if(localIndex) {
-                  rs = conn.getMetaData().getTables(null, StringUtil.escapeLike(SCHEMA_NAME), INDEX_TABLE_NAME+"_2",
+                  rs = conn.getMetaData().getTables(null, StringUtil.escapeLike(TestUtil.DEFAULT_SCHEMA_NAME), indexName + "_2",
                       new String[] { PTableType.INDEX.toString() });
                   assertTrue(rs.next());
                   if(PIndexState.ACTIVE.toString().equals(rs.getString("INDEX_STATE"))){
@@ -315,7 +321,7 @@ public class MutableIndexFailureIT extends BaseTest {
             } while(true);
             
             // Verify UPSERT on data table still work after index table is recreated
-            stmt = conn.prepareStatement("UPSERT INTO " + DATA_TABLE_FULL_NAME + " VALUES(?,?,?)");
+            stmt = conn.prepareStatement("UPSERT INTO " + fullTableName + " VALUES(?,?,?)");
             stmt.setString(1, "a4");
             stmt.setString(2, "x4");
             stmt.setString(3, "4");
@@ -323,7 +329,7 @@ public class MutableIndexFailureIT extends BaseTest {
             conn.commit();
 
             // verify index table has data
-            query = "SELECT count(1) FROM " + INDEX_TABLE_FULL_NAME;
+            query = "SELECT count(1) FROM " + fullIndexName;
             rs = conn.createStatement().executeQuery(query);
             assertTrue(rs.next());
 
@@ -337,6 +343,7 @@ public class MutableIndexFailureIT extends BaseTest {
         
         @Test(timeout=300000)
         public void testWriteFailureWithRegionServerDown() throws Exception {
+            setTableNames();
             String query;
             ResultSet rs;
     
@@ -344,26 +351,26 @@ public class MutableIndexFailureIT extends BaseTest {
             try (Connection conn = driver.connect(url, props);) {
                 conn.setAutoCommit(false);
                 conn.createStatement().execute(
-                        "CREATE TABLE " + DATA_TABLE_FULL_NAME + " (k VARCHAR NOT NULL PRIMARY KEY, v1 VARCHAR, v2 VARCHAR)");
-                query = "SELECT * FROM " + DATA_TABLE_FULL_NAME;
+                        "CREATE TABLE " + fullTableName + " (k VARCHAR NOT NULL PRIMARY KEY, v1 VARCHAR, v2 VARCHAR) "+tableDDLOptions);
+                query = "SELECT * FROM " + fullTableName;
                 rs = conn.createStatement().executeQuery(query);
                 assertFalse(rs.next());
         
                 conn.createStatement().execute(
-                        "CREATE INDEX " + INDEX_TABLE_NAME + " ON " + DATA_TABLE_FULL_NAME + " (v1) INCLUDE (v2)");
-                query = "SELECT * FROM " + INDEX_TABLE_FULL_NAME;
+                        "CREATE INDEX " + indexName + " ON " + fullTableName + " (v1) INCLUDE (v2)");
+                query = "SELECT * FROM " + fullIndexName;
                 rs = conn.createStatement().executeQuery(query);
                 assertFalse(rs.next());
         
                 // Verify the metadata for index is correct.
-                rs = conn.getMetaData().getTables(null, StringUtil.escapeLike(SCHEMA_NAME), INDEX_TABLE_NAME,
+                rs = conn.getMetaData().getTables(null, StringUtil.escapeLike(TestUtil.DEFAULT_SCHEMA_NAME), indexName,
                         new String[] { PTableType.INDEX.toString() });
                 assertTrue(rs.next());
-                assertEquals(INDEX_TABLE_NAME, rs.getString(3));
+                assertEquals(indexName, rs.getString(3));
                 assertEquals(PIndexState.ACTIVE.toString(), rs.getString("INDEX_STATE"));
                 assertFalse(rs.next());
                 
-                PreparedStatement stmt = conn.prepareStatement("UPSERT INTO " + DATA_TABLE_FULL_NAME + " VALUES(?,?,?)");
+                PreparedStatement stmt = conn.prepareStatement("UPSERT INTO " + fullTableName + " VALUES(?,?,?)");
                 stmt.setString(1, "a");
                 stmt.setString(2, "x");
                 stmt.setString(3, "1");
@@ -372,7 +379,7 @@ public class MutableIndexFailureIT extends BaseTest {
                 
                 // find a RS which doesn't has CATALOG table
                 TableName catalogTable = TableName.valueOf("SYSTEM.CATALOG");
-                TableName indexTable = TableName.valueOf(INDEX_TABLE_FULL_NAME);
+                TableName indexTable = TableName.valueOf(fullIndexName);
                 final HBaseCluster cluster = this.util.getHBaseCluster();
                 Collection<ServerName> rss = cluster.getClusterStatus().getServers();
                 HBaseAdmin admin = this.util.getHBaseAdmin();
@@ -406,7 +413,7 @@ public class MutableIndexFailureIT extends BaseTest {
                 
                 // use timer sending updates in every 10ms
                 this.scheduleTimer = new Timer(true);
-                this.scheduleTimer.schedule(new SendingUpdatesScheduleTask(conn), 0, 10);
+                this.scheduleTimer.schedule(new SendingUpdatesScheduleTask(conn, fullTableName), 0, 10);
                 // let timer sending some updates
                 Thread.sleep(100);
                 
@@ -419,7 +426,7 @@ public class MutableIndexFailureIT extends BaseTest {
                 // Verify the metadata for index is correct.       
                 do {
                   Thread.sleep(15 * 1000); // sleep 15 secs
-                  rs = conn.getMetaData().getTables(null, StringUtil.escapeLike(SCHEMA_NAME), INDEX_TABLE_NAME,
+                  rs = conn.getMetaData().getTables(null, StringUtil.escapeLike(TestUtil.DEFAULT_SCHEMA_NAME), indexName,
                       new String[] { PTableType.INDEX.toString() });
                   assertTrue(rs.next());
                   if(PIndexState.ACTIVE.toString().equals(rs.getString("INDEX_STATE"))){
@@ -439,10 +446,12 @@ public class MutableIndexFailureIT extends BaseTest {
         // running
         private final static AtomicInteger inProgress = new AtomicInteger(0);
         private final Connection conn;
+        private final String fullTableName;
         private int inserts = 0;
 
-        public SendingUpdatesScheduleTask(Connection conn) {
+        public SendingUpdatesScheduleTask(Connection conn, String fullTableName) {
             this.conn = conn;
+            this.fullTableName = fullTableName;
         }
 
         public void run() {
@@ -453,7 +462,7 @@ public class MutableIndexFailureIT extends BaseTest {
             try {
                 inProgress.incrementAndGet();
                 inserts++;
-                PreparedStatement stmt = conn.prepareStatement("UPSERT INTO " + DATA_TABLE_FULL_NAME + " VALUES(?,?,?)");
+                PreparedStatement stmt = conn.prepareStatement("UPSERT INTO " + fullTableName + " VALUES(?,?,?)");
                 stmt.setString(1, "a" + inserts);
                 stmt.setString(2, "x" + inserts);
                 stmt.setString(3, String.valueOf(inserts));
