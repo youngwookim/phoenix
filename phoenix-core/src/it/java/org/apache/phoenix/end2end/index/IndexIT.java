@@ -586,7 +586,7 @@ public class IndexIT extends BaseHBaseManagedTimeIT {
     @Test
     public void testMultipleUpdatesAcrossRegions() throws Exception {
     	Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
-    	String testTable = fullTableName+"_testMultipleUpdatesAcrossRegions";
+    	String testTable = fullTableName+"_MULTIPLE_UPDATES";
         try (Connection conn = DriverManager.getConnection(getUrl(), props)) {
 	        conn.setAutoCommit(false);
 	        String query;
