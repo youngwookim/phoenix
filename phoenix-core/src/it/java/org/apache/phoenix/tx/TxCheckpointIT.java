@@ -37,7 +37,6 @@ import org.apache.phoenix.end2end.BaseHBaseManagedTimeIT;
 import org.apache.phoenix.end2end.Shadower;
 import org.apache.phoenix.execute.MutationState;
 import org.apache.phoenix.jdbc.PhoenixConnection;
-import org.apache.phoenix.query.BaseTest;
 import org.apache.phoenix.query.QueryServices;
 import org.apache.phoenix.util.PropertiesUtil;
 import org.apache.phoenix.util.ReadOnlyProps;
@@ -54,7 +53,7 @@ import co.cask.tephra.Transaction.VisibilityLevel;
 import com.google.common.collect.Maps;
 
 @RunWith(Parameterized.class)
-public class TxCheckpointIT extends BaseTest {
+public class TxCheckpointIT extends BaseHBaseManagedTimeIT {
 	
 	private final boolean localIndex;
 	private final boolean mutable;
@@ -66,6 +65,10 @@ public class TxCheckpointIT extends BaseTest {
 	public TxCheckpointIT(boolean localIndex, boolean mutable) {
 		this.localIndex = localIndex;
 		this.mutable = mutable;
+		this.tableName = TestUtil.DEFAULT_DATA_TABLE_NAME;
+        this.indexName = "IDX_" + System.currentTimeMillis();
+        this.seqName = "SEQ_" + System.currentTimeMillis();
+        this.fullTableName = SchemaUtil.getTableName(tableName, tableName);
 	}
 	
 	@BeforeClass
@@ -83,16 +86,8 @@ public class TxCheckpointIT extends BaseTest {
            });
     }
     
-    private void setTableNames() {
-        tableName = TestUtil.DEFAULT_DATA_TABLE_NAME + "_" + System.currentTimeMillis();
-        indexName = "IDX_" + System.currentTimeMillis();
-        seqName = "SEQ_" + System.currentTimeMillis();
-        fullTableName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, tableName);
-    }
-
     @Test
     public void testUpsertSelectDoesntSeeUpsertedData() throws Exception {
-        setTableNames();
         Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
         props.setProperty(QueryServices.MUTATE_BATCH_SIZE_ATTRIB, Integer.toString(3));
         props.setProperty(QueryServices.SCAN_CACHE_SIZE_ATTRIB, Integer.toString(3));
@@ -114,14 +109,13 @@ public class TxCheckpointIT extends BaseTest {
     
     @Test
     public void testRollbackOfUncommittedDelete() throws Exception {
-        setTableNames();
         Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
         Connection conn = DriverManager.getConnection(getUrl(), props);
         conn.setAutoCommit(false);
         try {
             Statement stmt = conn.createStatement();
             stmt.execute("CREATE TABLE " + fullTableName + "(k VARCHAR PRIMARY KEY, v1 VARCHAR, v2 VARCHAR)"+(!mutable? " IMMUTABLE_ROWS=true" : ""));
-            stmt.execute("CREATE "+(localIndex? "LOCAL " : "")+"INDEX " + fullTableName + "_idx ON " + fullTableName + " (v1) INCLUDE(v2)");
+            stmt.execute("CREATE "+(localIndex? "LOCAL " : "")+"INDEX " + indexName + " ON " + fullTableName + " (v1) INCLUDE(v2)");
             
             stmt.executeUpdate("upsert into " + fullTableName + " values('x1', 'y1', 'a1')");
             stmt.executeUpdate("upsert into " + fullTableName + " values('x2', 'y2', 'a2')");
@@ -201,7 +195,6 @@ public class TxCheckpointIT extends BaseTest {
     
 	@Test
 	public void testCheckpointForUpsertSelect() throws Exception {
-	    setTableNames();
 		Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
 		try (Connection conn = DriverManager.getConnection(getUrl(), props);) {
 			conn.setAutoCommit(false);
@@ -289,7 +282,6 @@ public class TxCheckpointIT extends BaseTest {
 	
 	@Test
     public void testCheckpointForDeleteAndUpsert() throws Exception {
-	    setTableNames();
 		Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
 		ResultSet rs;
 		try (Connection conn = DriverManager.getConnection(getUrl(), props);) {

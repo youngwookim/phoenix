@@ -33,7 +33,6 @@ import java.util.Properties;
 
 import org.apache.phoenix.end2end.BaseHBaseManagedTimeIT;
 import org.apache.phoenix.end2end.Shadower;
-import org.apache.phoenix.query.BaseTest;
 import org.apache.phoenix.query.QueryServices;
 import org.apache.phoenix.util.PropertiesUtil;
 import org.apache.phoenix.util.ReadOnlyProps;
@@ -48,17 +47,20 @@ import org.junit.runners.Parameterized.Parameters;
 import com.google.common.collect.Maps;
 
 @RunWith(Parameterized.class)
-public class RollbackIT extends BaseTest {
+public class RollbackIT extends BaseHBaseManagedTimeIT {
 	
 	private final boolean localIndex;
 	private final boolean mutable;
-	private String tableName;
-    private String indexName;
-    private String fullTableName;
+	private final String tableName;
+    private final String indexName;
+    private final String fullTableName;
 
 	public RollbackIT(boolean localIndex, boolean mutable) {
 		this.localIndex = localIndex;
 		this.mutable = mutable;
+		this.tableName = TestUtil.DEFAULT_DATA_TABLE_NAME;
+		this.indexName = "IDX";
+		this.fullTableName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, tableName);
 	}
 	
 	@BeforeClass
@@ -77,15 +79,8 @@ public class RollbackIT extends BaseTest {
            });
     }
     
-    private void setTableNames() {
-		tableName = TestUtil.DEFAULT_DATA_TABLE_NAME + "_" + System.currentTimeMillis();
-        indexName = "IDX"  + "_" + System.currentTimeMillis();
-        fullTableName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, tableName);
-	}
-    
     @Test
     public void testRollbackOfUncommittedKeyValueIndexInsert() throws Exception {
-    	setTableNames();
         Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
         Connection conn = DriverManager.getConnection(getUrl(), props);
         conn.setAutoCommit(false);
@@ -128,7 +123,6 @@ public class RollbackIT extends BaseTest {
     
     @Test
     public void testRollbackOfUncommittedRowKeyIndexInsert() throws Exception {
-    	setTableNames();
         Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
         Connection conn = DriverManager.getConnection(getUrl(), props);
         conn.setAutoCommit(false);

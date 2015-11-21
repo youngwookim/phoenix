@@ -35,7 +35,6 @@ import java.util.Properties;
 
 import org.apache.phoenix.end2end.BaseHBaseManagedTimeIT;
 import org.apache.phoenix.end2end.Shadower;
-import org.apache.phoenix.query.BaseTest;
 import org.apache.phoenix.query.QueryServices;
 import org.apache.phoenix.util.PropertiesUtil;
 import org.apache.phoenix.util.ReadOnlyProps;
@@ -50,7 +49,7 @@ import org.junit.runners.Parameterized.Parameters;
 import com.google.common.collect.Maps;
 
 @RunWith(Parameterized.class)
-public class MutableRollbackIT extends BaseTest {
+public class MutableRollbackIT extends BaseHBaseManagedTimeIT {
 	
 	private final boolean localIndex;
 	private String tableName1;
@@ -62,6 +61,12 @@ public class MutableRollbackIT extends BaseTest {
 
 	public MutableRollbackIT(boolean localIndex) {
 		this.localIndex = localIndex;
+		this.tableName1 = TestUtil.DEFAULT_DATA_TABLE_NAME + "_1_";
+        this.indexName1 = "IDX1";
+        this.fullTableName1 = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, tableName1);
+        this.tableName2 = TestUtil.DEFAULT_DATA_TABLE_NAME + "_2_";
+        this.indexName2 = "IDX2";
+        this.fullTableName2 = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, tableName2);
 	}
 	
 	@BeforeClass
@@ -79,18 +84,7 @@ public class MutableRollbackIT extends BaseTest {
            });
     }
 	
-	private void setTableNames() {
-		tableName1 = TestUtil.DEFAULT_DATA_TABLE_NAME + "_1_" + System.currentTimeMillis();
-        indexName1 = "IDX1"  + "_" + System.currentTimeMillis();
-        fullTableName1 = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, tableName1);
-        tableName2 = TestUtil.DEFAULT_DATA_TABLE_NAME + "_2_" + System.currentTimeMillis();
-        indexName2 = "IDX2"  + "_" + System.currentTimeMillis();
-        fullTableName2 = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, tableName2);
-	}
-	
-	@Test
     public void testRollbackOfUncommittedExistingKeyValueIndexUpdate() throws Exception {
-		setTableNames();
         Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
         Connection conn = DriverManager.getConnection(getUrl(), props);
         conn.setAutoCommit(false);
@@ -219,7 +213,6 @@ public class MutableRollbackIT extends BaseTest {
 
 	@Test
     public void testRollbackOfUncommittedExistingRowKeyIndexUpdate() throws Exception {
-		setTableNames();
         Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
         Connection conn = DriverManager.getConnection(getUrl(), props);
         conn.setAutoCommit(false);
@@ -353,7 +346,6 @@ public class MutableRollbackIT extends BaseTest {
     
     @Test
     public void testMultiRollbackOfUncommittedExistingRowKeyIndexUpdate() throws Exception {
-    	setTableNames();
         Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
         Connection conn = DriverManager.getConnection(getUrl(), props);
         conn.setAutoCommit(false);
@@ -455,7 +447,6 @@ public class MutableRollbackIT extends BaseTest {
     
     @Test
     public void testCheckpointAndRollback() throws Exception {
-    	setTableNames();
         Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
         Connection conn = DriverManager.getConnection(getUrl(), props);
         conn.setAutoCommit(false);

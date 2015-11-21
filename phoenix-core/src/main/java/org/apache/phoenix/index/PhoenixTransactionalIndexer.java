@@ -21,11 +21,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import co.cask.tephra.Transaction;
-import co.cask.tephra.Transaction.VisibilityLevel;
-import co.cask.tephra.TxConstants;
-import co.cask.tephra.hbase11.TransactionAwareHTable;
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.Cell;
@@ -68,16 +63,15 @@ import org.apache.phoenix.util.ScanUtil;
 import org.apache.phoenix.util.SchemaUtil;
 import org.apache.phoenix.util.ServerUtil;
 
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
-import com.google.inject.Key;
-import com.google.common.primitives.Longs;
-
 import co.cask.tephra.Transaction;
 import co.cask.tephra.Transaction.VisibilityLevel;
 import co.cask.tephra.TxConstants;
 import co.cask.tephra.hbase11.TransactionAwareHTable;
+
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+import com.google.common.primitives.Longs;
 
 /**
  * Do all the work of managing index updates for a transactional table from a single coprocessor. Since the transaction
@@ -422,14 +416,6 @@ public class PhoenixTransactionalIndexer extends BaseRegionObserver {
                     valueMap.put(ref, ptr);
                 }
             }
-            /*
-            Cell cell = r.getColumnLatestCell(emptyColRef.getFamily(), emptyColRef.getQualifier());
-            if (cell != null) {
-                ImmutableBytesWritable ptr = new ImmutableBytesWritable();
-                ptr.set(cell.getValueArray(), cell.getValueOffset(), cell.getValueLength());
-                valueMap.put(emptyColRef, ptr);
-            }
-            */
         }
         
         @Override
@@ -458,29 +444,25 @@ public class PhoenixTransactionalIndexer extends BaseRegionObserver {
         }
 
         public void applyMutation() {
-            /*if (mutation instanceof Delete) {
-                valueMap.clear();
-            } else */ {
-                for (Cell cell : pendingUpdates) {
-                    if (cell.getTypeByte() == KeyValue.Type.Delete.getCode() || cell.getTypeByte() == KeyValue.Type.DeleteColumn.getCode()) {
-                        ColumnReference ref = new ColumnReference(cell.getFamilyArray(), cell.getFamilyOffset(), cell.getFamilyLength(), cell.getQualifierArray(), cell.getQualifierOffset(), cell.getQualifierLength());
-                        valueMap.remove(ref);
-                    } else if (cell.getTypeByte() == KeyValue.Type.DeleteFamily.getCode() || cell.getTypeByte() == KeyValue.Type.DeleteFamilyVersion.getCode()) {
-                        for (ColumnReference ref : indexedColumns) {
-                            if (ref.matchesFamily(cell.getFamilyArray(), cell.getFamilyOffset(), cell.getFamilyLength())) {
-                                valueMap.remove(ref);
-                            }
+            for (Cell cell : pendingUpdates) {
+                if (cell.getTypeByte() == KeyValue.Type.Delete.getCode() || cell.getTypeByte() == KeyValue.Type.DeleteColumn.getCode()) {
+                    ColumnReference ref = new ColumnReference(cell.getFamilyArray(), cell.getFamilyOffset(), cell.getFamilyLength(), cell.getQualifierArray(), cell.getQualifierOffset(), cell.getQualifierLength());
+                    valueMap.remove(ref);
+                } else if (cell.getTypeByte() == KeyValue.Type.DeleteFamily.getCode() || cell.getTypeByte() == KeyValue.Type.DeleteFamilyVersion.getCode()) {
+                    for (ColumnReference ref : indexedColumns) {
+                        if (ref.matchesFamily(cell.getFamilyArray(), cell.getFamilyOffset(), cell.getFamilyLength())) {
+                            valueMap.remove(ref);
                         }
-                    } else if (cell.getTypeByte() == KeyValue.Type.Put.getCode()){
-                        ColumnReference ref = new ColumnReference(cell.getFamilyArray(), cell.getFamilyOffset(), cell.getFamilyLength(), cell.getQualifierArray(), cell.getQualifierOffset(), cell.getQualifierLength());
-                        if (indexedColumns.contains(ref)) {
-                            ImmutableBytesWritable ptr = new ImmutableBytesWritable();
-                            ptr.set(cell.getValueArray(), cell.getValueOffset(), cell.getValueLength());
-                            valueMap.put(ref, ptr);
-                        }
-                    } else {
-                        throw new IllegalStateException("Unexpected mutation type for " + cell);
                     }
+                } else if (cell.getTypeByte() == KeyValue.Type.Put.getCode()){
+                    ColumnReference ref = new ColumnReference(cell.getFamilyArray(), cell.getFamilyOffset(), cell.getFamilyLength(), cell.getQualifierArray(), cell.getQualifierOffset(), cell.getQualifierLength());
+                    if (indexedColumns.contains(ref)) {
+                        ImmutableBytesWritable ptr = new ImmutableBytesWritable();
+                        ptr.set(cell.getValueArray(), cell.getValueOffset(), cell.getValueLength());
+                        valueMap.put(ref, ptr);
+                    }
+                } else {
+                    throw new IllegalStateException("Unexpected mutation type for " + cell);
                 }
             }
         }

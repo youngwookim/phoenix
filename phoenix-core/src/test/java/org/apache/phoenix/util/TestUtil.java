@@ -608,5 +608,14 @@ public class TestUtil {
 		Date date = new Date(DateUtil.parseDate("2015-01-01 00:00:00").getTime() + (i - 1) * TestUtil.NUM_MILLIS_IN_DAY);
 		assertEquals(rs.getDate(6), date);
 	}
+    
+    public static String getTableName(Boolean mutable, Boolean transactional) {
+        StringBuilder tableNameBuilder = new StringBuilder(DEFAULT_DATA_TABLE_NAME);
+        if (mutable!=null)
+            tableNameBuilder.append(mutable ? "_MUTABLE" : "_IMMUTABLE");
+        if (transactional!=null)
+            tableNameBuilder.append(transactional ? "_TXN" : "_NON_TXN");
+        return tableNameBuilder.toString();
+    }
 }
 

@@ -74,6 +74,7 @@ import org.apache.phoenix.util.StringUtil;
 import org.apache.phoenix.util.TestUtil;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -108,6 +109,10 @@ public class MutableIndexFailureIT extends BaseTest {
     public MutableIndexFailureIT(boolean transactional) {
         this.transactional = transactional;
         this.tableDDLOptions = transactional ? " TRANSACTIONAL=true " : "";
+        this.tableName = TestUtil.DEFAULT_DATA_TABLE_NAME;
+        this.indexName = "IDX";
+        this.fullTableName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, tableName);
+        this.fullIndexName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, indexName);
     }
     
     @Before
@@ -136,13 +141,6 @@ public class MutableIndexFailureIT extends BaseTest {
         return Arrays.asList(new Boolean[][] { { false }, { true } });
     }
     
-    private void setTableNames() {
-        tableName = TestUtil.DEFAULT_DATA_TABLE_NAME + "_" + System.currentTimeMillis();
-        indexName = "IDX"  + "_" + System.currentTimeMillis();
-        fullTableName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, tableName);
-        fullIndexName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, indexName);
-    }
-
     @After
     public void tearDown() throws Exception {
         try {
@@ -159,20 +157,19 @@ public class MutableIndexFailureIT extends BaseTest {
         }
     }
 
-//    @Ignore("See PHOENIX-2331")
+    @Ignore("See PHOENIX-2331")
     @Test(timeout=300000)
     public void testWriteFailureDisablesLocalIndex() throws Exception {
         helpTestWriteFailureDisablesIndex(true);
     }
  
-//    @Ignore("See PHOENIX-2332")
+    @Ignore("See PHOENIX-2332")
     @Test(timeout=300000)
     public void testWriteFailureDisablesIndex() throws Exception {
         helpTestWriteFailureDisablesIndex(false);
     }
     
     public void helpTestWriteFailureDisablesIndex(boolean localIndex) throws Exception {
-        setTableNames();
         Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
         try (Connection conn = driver.connect(url, props)) {
             String query;
@@ -343,7 +340,6 @@ public class MutableIndexFailureIT extends BaseTest {
         
         @Test(timeout=300000)
         public void testWriteFailureWithRegionServerDown() throws Exception {
-            setTableNames();
             String query;
             ResultSet rs;
     

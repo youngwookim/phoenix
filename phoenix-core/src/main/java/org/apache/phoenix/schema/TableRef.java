@@ -117,8 +117,8 @@ public class TableRef {
         TableRef other = (TableRef)obj;
         // a null alias on either side should mean a wildcard and should not fail the equals check
         if ((alias == null && other.alias != null) || (alias != null && !alias.equals(other.alias))) return false;
-        if (((table.getName() == null && other.table.getName() != null) 
-                || !table.getName().getString().equals(other.table.getName().getString()))) return false;
+        if ((table.getName() == null && other.table.getName() != null) 
+                || (table.getName()!=null && !table.getName().getString().equals(other.table.getName().getString()))) return false;
         return true;
     }
 

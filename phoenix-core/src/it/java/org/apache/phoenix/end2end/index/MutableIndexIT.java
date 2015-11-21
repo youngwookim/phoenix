@@ -52,6 +52,10 @@ public class MutableIndexIT extends BaseHBaseManagedTimeIT {
     
     protected final boolean localIndex;
     private final String tableDDLOptions;
+    private final String tableName;
+    private final String indexName;
+    private final String fullTableName;
+    private final String fullIndexName;
 	
     public MutableIndexIT(boolean localIndex, boolean transactional) {
 		this.localIndex = localIndex;
@@ -60,6 +64,10 @@ public class MutableIndexIT extends BaseHBaseManagedTimeIT {
 			optionBuilder.append("TRANSACTIONAL=true");
 		}
 		this.tableDDLOptions = optionBuilder.toString();
+		this.tableName = TestUtil.DEFAULT_DATA_TABLE_NAME + ( transactional ?  "_TXN" : "");
+        this.indexName = "IDX" + ( transactional ?  "_TXN" : "");
+        this.fullTableName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, tableName);
+        this.fullIndexName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, indexName);
 	}
 	
 	@Parameters(name="localIndex = {0} , transactional = {1}")
@@ -74,12 +82,6 @@ public class MutableIndexIT extends BaseHBaseManagedTimeIT {
     	Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
         try (Connection conn = DriverManager.getConnection(getUrl(), props)) {
 	        conn.setAutoCommit(false);
-	        // create unique table and index names for each parameterized test
-	        String tableName = TestUtil.DEFAULT_DATA_TABLE_NAME + "_" + System.currentTimeMillis();
-	        String indexName = "IDX"  + "_" + System.currentTimeMillis();
-	        String fullTableName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, tableName);
-	        String fullIndexName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, indexName);
-	        
             createMultiCFTestTable(fullTableName, tableDDLOptions);
             populateMultiCFTestTable(fullTableName);
             PreparedStatement stmt = conn.prepareStatement("CREATE " + (localIndex ? " LOCAL " : "") + " INDEX " + indexName + " ON " + fullTableName 
@@ -177,11 +179,6 @@ public class MutableIndexIT extends BaseHBaseManagedTimeIT {
 	        conn.setAutoCommit(false);
 	        String query;
 	        ResultSet rs;
-	        // create unique table and index names for each parameterized test
-	        String tableName = TestUtil.DEFAULT_DATA_TABLE_NAME + "_" + System.currentTimeMillis();
-	        String indexName = "IDX"  + "_" + System.currentTimeMillis();
-	        String fullTableName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, tableName);
-	        String fullIndexName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, indexName);
 	        conn.createStatement().execute("CREATE TABLE " + fullTableName + " (k VARCHAR NOT NULL PRIMARY KEY, v1 VARCHAR, v2 VARCHAR)" + tableDDLOptions);
 	        query = "SELECT * FROM " + fullTableName;
 	        rs = conn.createStatement().executeQuery(query);
@@ -287,12 +284,6 @@ public class MutableIndexIT extends BaseHBaseManagedTimeIT {
 	        conn.setAutoCommit(false);
 	        String query;
 	        ResultSet rs;
-	        // create unique table and index names for each parameterized test
-	        String tableName = TestUtil.DEFAULT_DATA_TABLE_NAME + "_" + System.currentTimeMillis();
-	        String indexName = "IDX"  + "_" + System.currentTimeMillis();
-	        String fullTableName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, tableName);
-	        String fullIndexName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, indexName);
-	
 	        // make sure that the tables are empty, but reachable
 	        conn.createStatement().execute("CREATE TABLE " + fullTableName + " (k VARCHAR NOT NULL PRIMARY KEY, v1 VARCHAR, v2 VARCHAR)" + tableDDLOptions);
 	        query = "SELECT * FROM " + fullTableName;
@@ -408,12 +399,6 @@ public class MutableIndexIT extends BaseHBaseManagedTimeIT {
 	        conn.setAutoCommit(false);
 	        String query;
 	        ResultSet rs;
-	        // create unique table and index names for each parameterized test
-	        String tableName = TestUtil.DEFAULT_DATA_TABLE_NAME + "_" + System.currentTimeMillis();
-	        String indexName = "IDX"  + "_" + System.currentTimeMillis();
-	        String fullTableName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, tableName);
-	        String fullIndexName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, indexName);
-    
 	        // make sure that the tables are empty, but reachable
 	        conn.createStatement().execute(
 	          "CREATE TABLE " + fullTableName
@@ -493,11 +478,6 @@ public class MutableIndexIT extends BaseHBaseManagedTimeIT {
         try (Connection conn = DriverManager.getConnection(getUrl(), props)) {
 	        conn.setAutoCommit(false);
 	        ResultSet rs;
-	        // create unique table and index names for each parameterized test
-	        String tableName = TestUtil.DEFAULT_DATA_TABLE_NAME + "_" + System.currentTimeMillis();
-	        String indexName = "IDX"  + "_" + System.currentTimeMillis();
-	        String fullTableName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, tableName);
-	        String fullIndexeName = SchemaUtil.getTableName(TestUtil.DEFAULT_SCHEMA_NAME, indexName);
     		Statement stmt = conn.createStatement();
     		stmt.execute("CREATE TABLE " + fullTableName + "(v1 VARCHAR PRIMARY KEY, v2 DOUBLE, v3 VARCHAR) "+tableDDLOptions);
     		stmt.execute("CREATE " + (localIndex ? "LOCAL" : "") + " INDEX " + indexName + " ON " + fullTableName + "  (v2) INCLUDE(v3)");
@@ -507,7 +487,7 @@ public class MutableIndexIT extends BaseHBaseManagedTimeIT {
     		conn.commit();
     		
     		//assert values in index table 
-    		rs = stmt.executeQuery("select * from " + fullIndexeName);
+    		rs = stmt.executeQuery("select * from " + fullIndexName);
     		assertTrue(rs.next());
     		assertEquals(0, Doubles.compare(0, rs.getDouble(1)));
     		assertTrue(rs.wasNull());
@@ -537,7 +517,7 @@ public class MutableIndexIT extends BaseHBaseManagedTimeIT {
     		assertFalse(rs.next());
     		
     		//assert values in index table 
-    		rs = stmt.executeQuery("select * from " + fullIndexeName);
+    		rs = stmt.executeQuery("select * from " + fullIndexName);
     		assertTrue(rs.next());
     		assertEquals(0, Doubles.compare(1.23, rs.getDouble(1)));
     		assertEquals("cc1", rs.getString(2));
@@ -549,7 +529,7 @@ public class MutableIndexIT extends BaseHBaseManagedTimeIT {
     		conn.commit();
     		
     		//assert values in index table 
-    		rs = stmt.executeQuery("select * from " + fullIndexeName);
+    		rs = stmt.executeQuery("select * from " + fullIndexName);
     		assertTrue(rs.next());
     		assertEquals(0, Doubles.compare(0, rs.getDouble(1)));
     		assertTrue(rs.wasNull());
