@@ -344,10 +344,8 @@ public class MutationState implements SQLCloseable {
         if (this == newMutationState) { // Doesn't make sense
             return;
         }
-        // TODO: what if new and old have txContext as that's really an error
-        // Really it's an error if newMutation txContext is not null
         if (txContext != null) {
-            for (TransactionAware txAware : txAwares) {
+            for (TransactionAware txAware : newMutationState.txAwares) {
                 txContext.addTransactionAware(txAware);
             }
         } else {
@@ -477,16 +475,16 @@ public class MutationState implements SQLCloseable {
         };
     }
 
-	private void generateMutations(final TableRef tableRef, long timestamp,
-			final Map<ImmutableBytesPtr, RowMutationState> values,
-			final List<Mutation> mutationList,
-			final List<Mutation> mutationsPertainingToIndex) {
-		final PTable table = tableRef.getTable();
+    private void generateMutations(final TableRef tableRef, long timestamp,
+            final Map<ImmutableBytesPtr, RowMutationState> values,
+            final List<Mutation> mutationList, final List<Mutation> mutationsPertainingToIndex) {
+        final PTable table = tableRef.getTable();
         boolean tableWithRowTimestampCol = table.getRowTimestampColPos() != -1;
-		Iterator<Map.Entry<ImmutableBytesPtr,RowMutationState>> iterator = values.entrySet().iterator();
-		long timestampToUse = timestamp;
+        Iterator<Map.Entry<ImmutableBytesPtr, RowMutationState>> iterator =
+                values.entrySet().iterator();
+        long timestampToUse = timestamp;
         while (iterator.hasNext()) {
-        	Map.Entry<ImmutableBytesPtr, RowMutationState> rowEntry = iterator.next();
+            Map.Entry<ImmutableBytesPtr, RowMutationState> rowEntry = iterator.next();
             ImmutableBytesPtr key = rowEntry.getKey();
             RowMutationState state = rowEntry.getValue();
             if (tableWithRowTimestampCol) {
@@ -500,26 +498,30 @@ public class MutationState implements SQLCloseable {
                     }
                 }
             }
-			PRow row = tableRef.getTable().newRow(connection.getKeyValueBuilder(), timestampToUse, key);
-			List<Mutation> rowMutations, rowMutationsPertainingToIndex;
-			if (rowEntry.getValue().getColumnValues() == PRow.DELETE_MARKER) { // means delete
-			    row.delete();
-			    rowMutations = row.toRowMutations();
-			    // Row deletes for index tables are processed by running a re-written query
-			    // against the index table (as this allows for flexibility in being able to
-			    // delete rows).
-			    rowMutationsPertainingToIndex = Collections.emptyList();
-			} else {
-				for (Map.Entry<PColumn,byte[]> valueEntry : rowEntry.getValue().getColumnValues().entrySet()) {
-			        row.setValue(valueEntry.getKey(), valueEntry.getValue());
-			    }
-			    rowMutations = row.toRowMutations();
-			    rowMutationsPertainingToIndex = rowMutations;
-			}
-			mutationList.addAll(rowMutations);
-			if (mutationsPertainingToIndex != null) mutationsPertainingToIndex.addAll(rowMutationsPertainingToIndex);
+            PRow row =
+                    tableRef.getTable()
+                            .newRow(connection.getKeyValueBuilder(), timestampToUse, key);
+            List<Mutation> rowMutations, rowMutationsPertainingToIndex;
+            if (rowEntry.getValue().getColumnValues() == PRow.DELETE_MARKER) { // means delete
+                row.delete();
+                rowMutations = row.toRowMutations();
+                // Row deletes for index tables are processed by running a re-written query
+                // against the index table (as this allows for flexibility in being able to
+                // delete rows).
+                rowMutationsPertainingToIndex = Collections.emptyList();
+            } else {
+                for (Map.Entry<PColumn, byte[]> valueEntry : rowEntry.getValue().getColumnValues()
+                        .entrySet()) {
+                    row.setValue(valueEntry.getKey(), valueEntry.getValue());
+                }
+                rowMutations = row.toRowMutations();
+                rowMutationsPertainingToIndex = rowMutations;
+            }
+            mutationList.addAll(rowMutations);
+            if (mutationsPertainingToIndex != null) mutationsPertainingToIndex
+                    .addAll(rowMutationsPertainingToIndex);
         }
-	}
+    }
     
     /**
      * Get the unsorted list of HBase mutations for the tables with uncommitted data.
@@ -658,7 +660,7 @@ public class MutationState implements SQLCloseable {
             }
         }
     }
-    private class MetaDataAwareHTable extends DelegateHTableInterface {
+    private class MetaDataAwareHTable extends DelegateHTable {
         private final TableRef tableRef;
         
         private MetaDataAwareHTable(HTableInterface delegate, TableRef tableRef) {
@@ -984,9 +986,11 @@ public class MutationState implements SQLCloseable {
                 } catch (TransactionFailureException e) {
                     try {
                         txContext.abort(e);
-                        throw new SQLExceptionInfo.Builder(SQLExceptionCode.TRANSACTION_FAILED).setRootCause(e).build().buildException();
+                        // abort and throw the original commit failure exception
+                        throw TransactionUtil.getTransactionFailureException(e);
                     } catch (TransactionFailureException e1) {
-                        throw TransactionUtil.getSQLException(e);
+                        // if abort fails and throw the abort failure exception
+                        throw TransactionUtil.getTransactionFailureException(e1);
                     }
                 } finally {
                   	if (!sendMutationsFailed) {

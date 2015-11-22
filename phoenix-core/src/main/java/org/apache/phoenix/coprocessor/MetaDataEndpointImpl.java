@@ -1228,7 +1228,7 @@ public class MetaDataEndpointImpl extends MetaDataProtocol implements Coprocesso
                 // exists without making an additional query
                 PTable table =
                         loadTable(env, tableKey, cacheKey, clientTimeStamp, HConstants.LATEST_TIMESTAMP);
-                if (table != null && !isTableDeleted(table)) {
+                if (table != null) {
                     if (table.getTimeStamp() < clientTimeStamp) {
                         // If the table is older than the client time stamp and it's deleted,
                         // continue

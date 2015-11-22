@@ -44,7 +44,7 @@ public class TransactionUtil {
         return serverTimeStamp / TxConstants.MAX_TX_PER_MS;
     }
     
-    public static SQLException getSQLException(TransactionFailureException e) {
+    public static SQLException getTransactionFailureException(TransactionFailureException e) {
         if (e instanceof TransactionConflictException) { 
             return new SQLExceptionInfo.Builder(SQLExceptionCode.TRANSACTION_CONFLICT_EXCEPTION)
                 .setMessage(e.getMessage())
@@ -52,7 +52,7 @@ public class TransactionUtil {
                 .build().buildException();
 
         }
-        return new SQLExceptionInfo.Builder(SQLExceptionCode.TRANSACTION_EXCEPTION)
+        return new SQLExceptionInfo.Builder(SQLExceptionCode.TRANSACTION_FAILED)
             .setMessage(e.getMessage())
             .setRootCause(e)
             .build().buildException();

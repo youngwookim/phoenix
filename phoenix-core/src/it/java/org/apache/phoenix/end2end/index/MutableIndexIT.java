@@ -475,15 +475,16 @@ public class MutableIndexIT extends BaseHBaseManagedTimeIT {
     @Test
     public void testUpsertingNullForIndexedColumns() throws Exception {
     	Properties props = PropertiesUtil.deepCopy(TEST_PROPERTIES);
+        String testTableName = tableName + "_" + System.currentTimeMillis();
         try (Connection conn = DriverManager.getConnection(getUrl(), props)) {
 	        conn.setAutoCommit(false);
 	        ResultSet rs;
     		Statement stmt = conn.createStatement();
-    		stmt.execute("CREATE TABLE " + fullTableName + "(v1 VARCHAR PRIMARY KEY, v2 DOUBLE, v3 VARCHAR) "+tableDDLOptions);
-    		stmt.execute("CREATE " + (localIndex ? "LOCAL" : "") + " INDEX " + indexName + " ON " + fullTableName + "  (v2) INCLUDE(v3)");
+    		stmt.execute("CREATE TABLE " + testTableName + "(v1 VARCHAR PRIMARY KEY, v2 DOUBLE, v3 VARCHAR) "+tableDDLOptions);
+    		stmt.execute("CREATE " + (localIndex ? "LOCAL" : "") + " INDEX " + indexName + " ON " + testTableName + "  (v2) INCLUDE(v3)");
     		
     		//create a row with value null for indexed column v2
-    		stmt.executeUpdate("upsert into " + fullTableName + " values('cc1', null, 'abc')");
+    		stmt.executeUpdate("upsert into " + testTableName + " values('cc1', null, 'abc')");
     		conn.commit();
     		
     		//assert values in index table 
@@ -496,7 +497,7 @@ public class MutableIndexIT extends BaseHBaseManagedTimeIT {
     		assertFalse(rs.next());
     		
     		//assert values in data table
-    		rs = stmt.executeQuery("select v1, v2, v3 from " + fullTableName);
+    		rs = stmt.executeQuery("select v1, v2, v3 from " + testTableName);
     		assertTrue(rs.next());
     		assertEquals("cc1", rs.getString(1));
     		assertEquals(0, Doubles.compare(0, rs.getDouble(2)));
@@ -505,11 +506,11 @@ public class MutableIndexIT extends BaseHBaseManagedTimeIT {
     		assertFalse(rs.next());
     		
     		//update the previously null value for indexed column v2 to a non-null value 1.23
-    		stmt.executeUpdate("upsert into " + fullTableName + " values('cc1', 1.23, 'abc')");
+    		stmt.executeUpdate("upsert into " + testTableName + " values('cc1', 1.23, 'abc')");
     		conn.commit();
     		
     		//assert values in data table
-    		rs = stmt.executeQuery("select /*+ NO_INDEX */ v1, v2, v3 from " + fullTableName);
+    		rs = stmt.executeQuery("select /*+ NO_INDEX */ v1, v2, v3 from " + testTableName);
     		assertTrue(rs.next());
     		assertEquals("cc1", rs.getString(1));
     		assertEquals(0, Doubles.compare(1.23, rs.getDouble(2)));
@@ -517,7 +518,7 @@ public class MutableIndexIT extends BaseHBaseManagedTimeIT {
     		assertFalse(rs.next());
     		
     		//assert values in index table 
-    		rs = stmt.executeQuery("select * from " + fullIndexName);
+    		rs = stmt.executeQuery("select * from " + indexName);
     		assertTrue(rs.next());
     		assertEquals(0, Doubles.compare(1.23, rs.getDouble(1)));
     		assertEquals("cc1", rs.getString(2));
@@ -525,11 +526,11 @@ public class MutableIndexIT extends BaseHBaseManagedTimeIT {
     		assertFalse(rs.next());
     		
     		//update the value for indexed column v2 back to null
-    		stmt.executeUpdate("upsert into " + fullTableName + " values('cc1', null, 'abc')");
+    		stmt.executeUpdate("upsert into " + testTableName + " values('cc1', null, 'abc')");
     		conn.commit();
     		
     		//assert values in index table 
-    		rs = stmt.executeQuery("select * from " + fullIndexName);
+    		rs = stmt.executeQuery("select * from " + indexName);
     		assertTrue(rs.next());
     		assertEquals(0, Doubles.compare(0, rs.getDouble(1)));
     		assertTrue(rs.wasNull());
@@ -538,7 +539,7 @@ public class MutableIndexIT extends BaseHBaseManagedTimeIT {
     		assertFalse(rs.next());
     		
     		//assert values in data table
-    		rs = stmt.executeQuery("select v1, v2, v3 from " + fullTableName);
+    		rs = stmt.executeQuery("select v1, v2, v3 from " + testTableName);
     		assertTrue(rs.next());
     		assertEquals("cc1", rs.getString(1));
     		assertEquals(0, Doubles.compare(0, rs.getDouble(2)));
