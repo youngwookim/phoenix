@@ -17,6 +17,8 @@
  */
 package org.apache.phoenix.schema;
 
+import java.util.Objects;
+
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.phoenix.compile.TupleProjectionCompiler;
 import org.apache.phoenix.query.QueryConstants;
@@ -105,7 +107,7 @@ public class TableRef {
     public int hashCode() {
         final int prime = 31;
         int result = alias == null ? 0 : alias.hashCode();
-        result = prime * result + ( this.table.getName()!=null ? this.table.getName().getString().hashCode() : 0);
+        result = prime * result + ( this.table.getName()!=null ? this.table.getName().hashCode() : 0);
         return result;
     }
 
@@ -115,10 +117,8 @@ public class TableRef {
         if (obj == null) return false;
         if (getClass() != obj.getClass()) return false;
         TableRef other = (TableRef)obj;
-        // a null alias on either side should mean a wildcard and should not fail the equals check
-        if ((alias == null && other.alias != null) || (alias != null && !alias.equals(other.alias))) return false;
-        if ((table.getName() == null && other.table.getName() != null) 
-                || (table.getName()!=null && !table.getName().getString().equals(other.table.getName().getString()))) return false;
+        if (!Objects.equals(alias, other.alias)) return false;
+        if (!Objects.equals(table.getName(), other.table.getName())) return false;
         return true;
     }
 

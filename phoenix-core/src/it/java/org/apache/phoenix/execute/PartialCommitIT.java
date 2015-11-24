@@ -260,12 +260,6 @@ public class PartialCommitIT extends BaseTest {
                 assertArrayEquals(expectedUncommittedStatementIndexes, uncommittedStatementIndexes);
             }
             
-            ResultSet rs1 = sta.executeQuery("select * from A_SUCCESS_TABLE where k='checkThatAllStatementTypesMaintainOrderInConnection' or k like 'z%'");
-            while (rs1.next()) {
-	            System.out.println(rs1.getString(1));
-	            System.out.println(rs1.getString(2));
-            }
-            
             // verify data in HBase
             for (int i = 0; i < countStatementsForVerification.size(); i++) {
                 String countStatement = countStatementsForVerification.get(i);
