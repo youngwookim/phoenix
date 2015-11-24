@@ -211,7 +211,7 @@ public class ConnectionQueryServicesImpl extends DelegateQueryServices implement
 
     // Lowest HBase version on the cluster.
     private int lowestClusterHBaseVersion = Integer.MAX_VALUE;
-    private boolean isMutableIndexWALCodecInstalled = false;
+    private boolean isMutableIndexWALCodecInstalled = true;
 
     @GuardedBy("connectionCountLock")
     private int connectionCount = 0;
@@ -1103,7 +1103,7 @@ public class ConnectionQueryServicesImpl extends DelegateQueryServices implement
                     buf.append(name);
                     buf.append(';');
                 }
-                isMutableIndexWALCodecInstalled |= isInvalidMutableIndexConfig(result.getValue());
+                isMutableIndexWALCodecInstalled &= !isInvalidMutableIndexConfig(result.getValue());
                 if (minHBaseVersion > MetaDataUtil.decodeHBaseVersion(result.getValue())) {
                     minHBaseVersion = MetaDataUtil.decodeHBaseVersion(result.getValue());
                 }

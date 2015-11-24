@@ -391,7 +391,7 @@ public class ConnectionlessQueryServicesImpl extends DelegateQueryServices imple
 
     @Override
     public boolean isMutableIndexWALCodecInstalled() {
-        return false;
+        return true;
     }
 
     @Override

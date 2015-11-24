@@ -1181,7 +1181,7 @@ public class MetaDataClient {
                     if (hbaseVersion < PhoenixDatabaseMetaData.MUTABLE_SI_VERSION_THRESHOLD) {
                         throw new SQLExceptionInfo.Builder(SQLExceptionCode.NO_MUTABLE_INDEXES).setTableName(indexTableName.getTableName()).build().buildException();
                     }
-                    if (connection.getQueryServices().isMutableIndexWALCodecInstalled() && !dataTable.isTransactional()) {
+                    if (!connection.getQueryServices().isMutableIndexWALCodecInstalled() && !dataTable.isTransactional()) {
                         throw new SQLExceptionInfo.Builder(SQLExceptionCode.INVALID_MUTABLE_INDEX_CONFIG).setTableName(indexTableName.getTableName()).build().buildException();
                     }
                 }
